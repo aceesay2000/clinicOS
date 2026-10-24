@@ -32,6 +32,8 @@ async function open() {
       },
     };
   }
+  // Online, an in-memory database would silently lose records between requests.
+  if (process.env.VERCEL) throw new Error('No database connected. In Vercel: project → Storage → connect a Postgres database.');
   return openLocal(process.env.LOCAL_DB_DIR);
 }
 
