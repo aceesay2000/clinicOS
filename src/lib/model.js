@@ -1,5 +1,5 @@
 // Clinic records and the actions stations take on them. Every action is a
-// local write (see db/local.js), so it works the same with or without the hub.
+// local write (see db/local.js), so it works the same with or without a connection.
 
 import * as db from '../db/local.js';
 import { calcQty, ageOf, DEFAULT_VILLAGES } from './clinical.js';

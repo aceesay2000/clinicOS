@@ -207,11 +207,11 @@ export default function Registration() {
             <div className="label">Today so far</div>
             <div className="kv"><span>Registered</span><b>{today.length}</b></div>
             <div className="kv"><span>Waiting at Vitals</span><b>{waitingVitals}</b></div>
-            <div className="kv"><span>Card numbers left on this tablet</span><b>{left}</b></div>
+            <div className="kv"><span>Card numbers left on this phone</span><b>{left}</b></div>
             {last && <p className="small muted">Last: {last.clinicId} · {last.name}</p>}
           </div>
           <div className="banner info small" style={{ marginTop: 12 }}>
-            <div>Hub offline? Keep going: everything is saved on this tablet.<br /><SyncBadge /></div>
+            <div>Connection down? Keep going: everything is saved on this phone.<br /><SyncBadge /></div>
           </div>
         </aside>
       </div>

@@ -202,3 +202,17 @@ table.t td { padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-a
   #root { display: none !important; }
   #print-root { display: block; }
 }
+
+/* ---------- phones ---------- */
+@media (max-width: 600px) {
+  .topbar { gap: 8px 10px; padding: 8px 12px; min-height: 0; }
+  .topbar .clinic { display: none; }
+  .topbar .btn { min-height: 36px; padding: 4px 10px; }
+  .nav { order: 10; width: 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .nav button { white-space: nowrap; }
+  .sync { font-size: 13px; }
+  .page, .split > section { padding: 12px; }
+  .grid4 { grid-template-columns: 1fr 1fr; }
+  .input.big { font-size: 22px; }
+  h1 { font-size: 22px; }
+}

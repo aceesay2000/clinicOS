@@ -22,7 +22,7 @@ export default function Admin({ device, saveDevice }) {
       <Conflicts />
       <ClinicSettings />
       <Pins />
-      <ThisTablet device={device} onEdit={() => setEditDevice(true)} />
+      <ThisPhone device={device} onEdit={() => setEditDevice(true)} />
       <Cards />
       <Data />
     </div>
@@ -73,7 +73,7 @@ function Pins() {
     for (const [role, pin] of Object.entries(pins)) if (pin) next[role] = hashPin(pin);
     await M.saveSettings({ pins: next });
     setPins({});
-    toast('PINs saved — they reach other tablets on the next sync');
+    toast('PINs saved — they reach other phones on the next sync');
   };
   return (
     <div className="card">
@@ -93,18 +93,18 @@ function Pins() {
   );
 }
 
-function ThisTablet({ device, onEdit }) {
+function ThisPhone({ device, onEdit }) {
   const status = useSyncStatus();
   const [blocks, setBlocks] = useState([]);
   useEffect(() => { idBlocks().then(setBlocks); }, []);
   return (
     <div className="card">
-      <h2>This tablet</h2>
+      <h2>This phone</h2>
       <div className="grid2" style={{ marginTop: 10 }}>
         <div>
           <div className="kv"><span>Name</span><b>{device.name}</b></div>
           <div className="kv"><span>Station</span><b>{ROLES.find((r) => r.id === device.station)?.label}</b></div>
-          <div className="kv"><span>Hub</span><b>{device.token ? device.hubUrl : 'Not paired'}</b></div>
+          <div className="kv"><span>Set up for clinic</span><b>{device.token ? 'Yes' : 'No'}</b></div>
         </div>
         <div>
           <div className="kv"><span>Sync</span><b>{status.state}</b></div>
@@ -116,7 +116,7 @@ function ThisTablet({ device, onEdit }) {
       {status.message && <p className="err">{status.message}</p>}
       <div className="row" style={{ marginTop: 10 }}>
         <button className="btn" onClick={() => sync.syncNow()}>Sync now</button>
-        <button className="btn" onClick={onEdit}>Change station / pair with hub</button>
+        <button className="btn" onClick={onEdit}>Change station</button>
       </div>
     </div>
   );
@@ -136,7 +136,7 @@ function Conflicts() {
   return (
     <div className="card" style={{ borderColor: 'var(--amber)' }}>
       <h2>Sync conflicts to review · {list.length}</h2>
-      <p className="small muted">Two tablets changed the same thing while out of touch. Both versions are kept; the newer one is showing until you choose.</p>
+      <p className="small muted">Two phones changed the same thing while out of touch. Both versions are kept; the newer one is showing until you choose.</p>
       {list.map((c) => {
         const doc = db.get(c.docId);
         const who = doc?.clinicId || M.patientOf(db.get(doc?.visitId))?.name || c.docId.slice(0, 8);
@@ -200,12 +200,12 @@ function Data() {
   const toast = useToast();
   const status = useSyncStatus();
   const [confirm, setConfirm] = useState('');
-  const hubBackup = async () => {
+  const serverBackup = async () => {
     try {
       const data = await sync.fetchBackup();
-      download(`clinicos-hub-backup-${M.settings().day}.json`, JSON.stringify({ app: 'clinic-os', source: 'hub', ...data }), 'application/json');
+      download(`clinicos-backup-${M.settings().day}.json`, JSON.stringify({ app: 'clinic-os', source: 'server', ...data }), 'application/json');
     } catch (e) {
-      toast(`Hub backup failed: ${e.message}`);
+      toast(`Backup failed: ${e.message}`);
     }
   };
   const wipe = async () => {
@@ -216,14 +216,14 @@ function Data() {
     <div className="card">
       <h2>Backup & after the event</h2>
       <div className="row" style={{ marginTop: 10 }}>
-        <button className="btn" onClick={hubBackup}>Download full backup from hub</button>
-        <button className="btn" onClick={exportBackupLocal}>Download this tablet's data</button>
+        <button className="btn" onClick={serverBackup}>Download full backup</button>
+        <button className="btn" onClick={exportBackupLocal}>Download this phone's data</button>
       </div>
-      <p className="small muted">The hub also saves a backup copy every hour (set BACKUP_DIR to a USB stick). Cloud backup is done after the event, when someone has signal.</p>
+      <p className="small muted">The online database keeps its own backups too. Download a full copy at the end of each clinic day.</p>
       <div className="banner red" style={{ marginTop: 14, color: 'var(--ink)' }}>
         <div style={{ flex: 1 }}>
-          <b>Wipe this tablet</b> — removes all patient data from this device. Only after the hub backup is confirmed.
-          {status.pending > 0 && <div className="err">{status.pending} changes have not reached the hub yet. Sync first.</div>}
+          <b>Wipe this phone</b> — removes all patient data from this phone. Do this on volunteers' phones after the clinic day.
+          {status.pending > 0 && <div className="err">{status.pending} changes have not reached the server yet. Connect to the internet first.</div>}
         </div>
         <input className="input" style={{ width: 160, fontSize: 16 }} placeholder="Type WIPE" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
         <button className="btn danger" disabled={confirm !== 'WIPE' || status.pending > 0} onClick={wipe}>Wipe</button>
