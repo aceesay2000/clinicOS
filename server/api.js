@@ -145,8 +145,8 @@ async function heartbeat(q, deviceId, info) {
 export async function handle(db, method, name, body) {
   const h = handlers[`${method} ${name}`];
   if (!h) return [404, { error: 'Not found' }];
-  await ensureSchema(db);
   try {
+    await ensureSchema(db);
     return await h(db, body || {});
   } catch (err) {
     console.error(name, err);
