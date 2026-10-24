@@ -92,7 +92,7 @@ function Devices() {
         <b>Devices</b>
         {devices.map((d) => {
           const ago = M.minutesSince(d.lastSeen);
-          const ok = Date.now() - d.lastSeen < 45000;
+          const ok = db.now() - d.lastSeen < 45000;
           return (
             <span key={d.id} className="sync small">
               <i className={'dot ' + (ok ? 'ok' : 'warn')} /> {d.name}

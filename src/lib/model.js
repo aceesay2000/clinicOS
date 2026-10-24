@@ -134,7 +134,7 @@ export function queue(station) {
   return list.sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || a.stationSince - b.stationSince);
 }
 
-export const minutesSince = (t) => (t ? Math.max(0, Math.floor((Date.now() - t) / 60000)) : 0);
+export const minutesSince = (t) => (t ? Math.max(0, Math.floor((db.now() - t) / 60000)) : 0);
 
 // ---------- stock ----------
 
@@ -174,12 +174,12 @@ function movement(medicineId, kind, qty, delta, extra = {}) {
 // ---------- actions ----------
 
 function event(visitId, station, kind) {
-  return db.put('event', null, { visitId, station, kind, at: Date.now() });
+  return db.put('event', null, { visitId, station, kind, at: db.now() });
 }
 
 export async function moveTo(visit, station, fields = {}) {
   if (visit.station && visit.station !== station) await event(visit.id, visit.station, 'finished');
-  await db.put('visit', visit.id, { station, stationSince: Date.now(), ...fields });
+  await db.put('visit', visit.id, { station, stationSince: db.now(), ...fields });
   await event(visit.id, station, 'arrived');
 }
 
@@ -189,7 +189,7 @@ export async function registerPatient({ patientId, patient, complaints, consent,
   if (existing) return { patient: p, visit: existing, existing: true };
   const visit = await db.put('visit', null, {
     patientId: p.id, clinicId, day: settings().day, complaints, consent: !!consent,
-    station: 'vitals', stationSince: Date.now(), urgent: false, status: 'open',
+    station: 'vitals', stationSince: db.now(), urgent: false, status: 'open',
   });
   await event(visit.id, 'registration', 'finished');
   await event(visit.id, 'vitals', 'arrived');
@@ -207,7 +207,7 @@ export async function saveVitals(visit, vitals, { urgent, urgentReason, send }) 
  * against stock, and the order appears on the pharmacy list.
  */
 export async function finishConsult(visit, consult, items, doctor) {
-  await db.put('consult', 'consult:' + visit.id, { visitId: visit.id, ...consult, doctor, finishedAt: Date.now() });
+  await db.put('consult', 'consult:' + visit.id, { visitId: visit.id, ...consult, doctor, finishedAt: db.now() });
   for (const it of items) {
     const m = db.get(it.medicineId);
     const qty = calcQty(it, m);
@@ -239,10 +239,10 @@ export async function setPacked(visit, packed) {
 export async function dispense(visit, by) {
   for (const it of rxItems(visit.id)) {
     if (it.status !== 'reserved') continue;
-    await db.put('rxitem', it.id, { status: 'dispensed', dispensedAt: Date.now(), dispensedBy: by });
+    await db.put('rxitem', it.id, { status: 'dispensed', dispensedAt: db.now(), dispensedBy: by });
     await movement(it.medicineId, 'dispensed', it.qty, -Number(it.qty), { visitId: visit.id, itemId: it.id });
   }
-  await moveTo(visit, 'done', { status: 'dispensed', dispensedAt: Date.now() });
+  await moveTo(visit, 'done', { status: 'dispensed', dispensedAt: db.now() });
 }
 
 /** Patient left without collecting: give the reserved stock back. */

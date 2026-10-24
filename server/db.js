@@ -39,7 +39,9 @@ async function open() {
 
 /** In-process Postgres for local runs and tests. dir = undefined keeps it in memory. */
 export async function openLocal(dir) {
-  const { PGlite } = await import('@electric-sql/pglite');
+  // Kept out of the online bundle: only local runs and tests use it.
+  const name = '@electric-sql/pglite';
+  const { PGlite } = await import(/* @vite-ignore */ name);
   const pg = new PGlite(dir);
   return {
     query: (sql, params) => pg.query(sql, params),
