@@ -1,6 +1,6 @@
-// Station PINs keep a casual passer-by off a tablet; they are not strong
+// Station PINs keep a casual passer-by off a phone; they are not strong
 // secrets. Stored hashed so the plain PIN never travels in the synced settings.
-// (crypto.subtle is unavailable on plain-http local networks, hence FNV-1a.)
+// (FNV-1a keeps this independent of crypto.subtle, which plain-http pages lack.)
 export function hashPin(pin) {
   let h = 0x811c9dc5;
   for (const ch of 'clinic-os:' + pin) {

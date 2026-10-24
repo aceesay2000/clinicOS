@@ -3,7 +3,7 @@ import App from './App.jsx';
 import './styles.css';
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
-  // Only available on localhost / https (see README: "Tablets and offline start-up").
+  // Lets the app open with no connection (https and localhost only).
   navigator.serviceWorker.register('./sw.js').catch(() => {});
 }
 

@@ -3,21 +3,26 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "ClinicOS Free Clinic Day — offline-first clinic platform (tablets + local hub)",
+  "description": "ClinicOS Free Clinic Day \u2014 web app that keeps working offline and catches up when the connection returns",
   "scripts": {
     "dev": "vite --host",
     "build": "vite build",
-    "hub": "node hub/server.js",
-    "start": "npm run build && node hub/server.js",
+    "start": "npm run build && node server/local.js",
+    "serve": "node server/local.js",
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "qrcode-generator": "^2.0.4",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "pg": "8.23.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^5.0.0",
-    "vite": "^7.1.0"
+    "vite": "^7.1.0",
+    "@electric-sql/pglite": "0.5.8"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

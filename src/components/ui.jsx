@@ -38,11 +38,11 @@ export function SyncBadge() {
   const s = useSyncStatus();
   const waiting = s.pending ? ` · ${s.pending} change${s.pending === 1 ? '' : 's'} waiting to sync` : '';
   let dot = 'warn', text;
-  if (s.state === 'unpaired') text = `Not paired with hub · saved on this tablet${waiting}`;
-  else if (s.state === 'synced') { dot = 'ok'; text = 'Synced to hub'; }
+  if (s.state === 'unpaired') text = `Not set up · saved on this phone${waiting}`;
+  else if (s.state === 'synced') { dot = 'ok'; text = 'Synced'; }
   else if (s.state === 'syncing') { dot = 'ok'; text = `Syncing${waiting}`; }
   else if (s.state === 'error') { dot = 'bad'; text = `Sync problem${waiting}`; }
-  else text = `Offline${waiting || ' · saved on this tablet'}`;
+  else text = `Offline${waiting || ' · saved on this phone'}`;
   return (
     <span className="sync" title={s.message || ''}>
       <i className={'dot ' + dot} /> {text}

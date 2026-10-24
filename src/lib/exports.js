@@ -61,8 +61,8 @@ export function exportMovements() {
   download(fname('stock-movements.csv'), toCSV(rows));
 }
 
-/** Everything on this tablet, as JSON (restorable / importable later). */
+/** Everything on this phone, as JSON (restorable / importable later). */
 export function exportBackupLocal() {
-  const data = { app: 'clinic-os', exportedAt: Date.now(), source: 'tablet', docs: db.all() };
+  const data = { app: 'clinic-os', exportedAt: Date.now(), source: 'phone', docs: db.all() };
   download(fname('backup.json'), JSON.stringify(data), 'application/json');
 }

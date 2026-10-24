@@ -1,16 +1,16 @@
-// Sync engine: pushes the outbox to the paired hub and pulls everything new.
+// Sync engine: pushes the outbox to the clinic server and pulls everything new.
 //
-// Data only ever leaves the tablet for the hub it was paired with: every
-// request carries the device token, and the hub's identity is checked on each
-// response, so joining a different network (or a different hub) just keeps
-// the changes queued on the tablet until the clinic hub is back.
+// Every request carries the phone's token, and the server's identity is
+// checked on each reply. Whenever the server can't be reached (no signal,
+// Wi-Fi down, generator off), changes stay queued on the phone and are sent
+// automatically when the connection is back.
 
 import * as db from './local.js';
 
 const INTERVAL_MS = 3000;
 const TIMEOUT_MS = 8000;
 
-let config = null; // { hubUrl, hubId, token, deviceId, name, station }
+let config = null; // { hubUrl ('' = this site), hubId (server id), token, deviceId, name, station }
 let timer = null;
 let unsubscribe = null;
 let running = false;
@@ -54,7 +54,7 @@ async function call(path, body, url) {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const err = new Error(data.error || `Hub replied ${res.status}`);
+      const err = new Error(data.error || `Server replied ${res.status}`);
       err.status = res.status;
       throw err;
     }
@@ -64,11 +64,11 @@ async function call(path, body, url) {
   }
 }
 
-/** Pair this tablet with a hub. Returns { hubId, token }. */
+/** Register this phone with the clinic server. Returns { hubUrl, hubId, token }. */
 export async function pair(hubBase, code, deviceId, name) {
   const base = hubBase.replace(/\/$/, '');
   const hello = await call(null, null, base + '/api/hello');
-  if (hello.app !== 'clinic-os') throw new Error('That address is not a ClinicOS hub');
+  if (hello.app !== 'clinic-os') throw new Error('That address is not a ClinicOS server');
   const res = await call(null, { code, deviceId, name }, base + '/api/pair');
   return { hubUrl: base, hubId: res.hubId, token: res.token };
 }
@@ -99,7 +99,7 @@ export async function syncNow() {
         changes,
         device: { name: config.name, station: config.station },
       });
-      if (res.hubId !== config.hubId) throw new Error('Connected to a different hub — changes kept on this tablet');
+      if (res.hubId !== config.hubId) throw new Error('Connected to a different clinic server — changes kept on this phone');
       await db.applySync(changes, res.docs);
       await db.setMeta('since', res.seq);
       more = res.more;
@@ -113,7 +113,7 @@ export async function syncNow() {
     setStatus({
       state: offline ? 'offline' : 'error',
       pending,
-      message: offline ? 'Hub not reachable — saving on this tablet' : err.message,
+      message: offline ? 'No connection — saving on this phone' : err.message,
     });
   } finally {
     running = false;

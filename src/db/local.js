@@ -182,8 +182,8 @@ export async function pendingCount() {
 }
 
 /**
- * After a sync round trip: drop outbox entries the hub accepted (unless edited
- * again meanwhile), then apply the hub's docs. Local unsynced fields stay on top.
+ * After a sync round trip: drop outbox entries the server accepted (unless edited
+ * again meanwhile), then apply the server's docs. Local unsynced fields stay on top.
  */
 export async function applySync(sent, incoming) {
   const tx = idb.transaction(['docs', 'outbox'], 'readwrite');
@@ -203,7 +203,7 @@ export async function applySync(sent, incoming) {
   if (incoming.length) notify();
 }
 
-/** Remove every record from this tablet (after the hub backup is confirmed). */
+/** Remove every record from this phone (after the server backup is confirmed). */
 export async function wipe() {
   const tx = idb.transaction(['docs', 'outbox', 'meta'], 'readwrite');
   tx.objectStore('docs').clear();
