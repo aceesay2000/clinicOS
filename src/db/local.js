@@ -15,7 +15,7 @@ const listeners = new Set();
 let version = 0;
 
 export function uuid() {
-  // crypto.randomUUID only exists in secure contexts; tablets reach the hub over plain http.
+  // crypto.randomUUID only exists in secure contexts (not on plain-http local runs).
   const b = crypto.getRandomValues(new Uint8Array(16));
   b[6] = (b[6] & 0x0f) | 0x40;
   b[8] = (b[8] & 0x3f) | 0x80;
@@ -139,16 +139,23 @@ function notify() {
 let deviceId = null;
 export const setDeviceId = (id) => (deviceId = id);
 
+// Server time minus this phone's clock, learned on each sync. Volunteers'
+// phones are not always set to the right time; wait times and "newest edit
+// wins" both rely on timestamps that agree across phones.
+let clockOffset = 0;
+export const setClockOffset = (ms) => { if (Number.isFinite(ms)) clockOffset = Math.round(ms); };
+export const now = () => Date.now() + clockOffset;
+
 /**
  * Create or update a record. Only `fields` are changed; other fields are kept.
  * Returns the saved doc. Resolves once the change is durable on this device.
  */
 export async function put(type, id, fields) {
   id ||= uuid();
-  const now = Date.now();
+  const ts = now();
   const prev = docs.get(id);
-  const change = { ...fields, updatedAt: now, updatedBy: deviceId };
-  if (!prev) change.createdAt = fields.createdAt || now;
+  const change = { ...fields, updatedAt: ts, updatedBy: deviceId };
+  if (!prev) change.createdAt = fields.createdAt || ts;
   const doc = { ...(prev || { id, type }), ...change };
   docs.set(id, doc);
 
@@ -159,7 +166,7 @@ export async function put(type, id, fields) {
     id, type,
     base: pending ? pending.base : prev?._seq || 0,
     fields: { ...(pending?.fields || {}), ...change },
-    ts: now,
+    ts,
   });
   tx.objectStore('docs').put(doc);
   await done(tx);

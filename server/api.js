@@ -20,20 +20,28 @@ create table if not exists devices (
 create table if not exists config (key text primary key, value jsonb not null);
 `;
 
+// Per server instance: schema checked once, server id read once.
 const ready = new WeakMap();
+const serverIds = new WeakMap();
 function ensureSchema(db) {
   if (!ready.has(db)) {
     ready.set(db, (async () => {
-      for (const stmt of SCHEMA.split(';').map((s) => s.trim()).filter(Boolean)) await db.query(stmt);
-      await db.query(`insert into config (key, value) values ('serverId', $1), ('nextId', '1') on conflict do nothing`, [JSON.stringify(crypto.randomUUID())]);
+      const { rows } = await db.query(`select value from config where key = 'serverId'`).catch(() => ({ rows: [] }));
+      if (!rows[0]) {
+        for (const stmt of SCHEMA.split(';').map((s) => s.trim()).filter(Boolean)) await db.query(stmt);
+        await db.query(`insert into config (key, value) values ('serverId', $1), ('nextId', '1') on conflict do nothing`, [JSON.stringify(crypto.randomUUID())]);
+      }
     })().catch((err) => { ready.delete(db); throw err; }));
   }
   return ready.get(db);
 }
 
-async function config(q, key) {
-  const { rows } = await q.query('select value from config where key = $1', [key]);
-  return rows[0]?.value;
+async function serverId(db) {
+  if (!serverIds.has(db)) {
+    const { rows } = await db.query(`select value from config where key = 'serverId'`);
+    serverIds.set(db, rows[0].value);
+  }
+  return serverIds.get(db);
 }
 
 async function authed(q, body) {
@@ -75,7 +83,10 @@ export async function applyChange(q, change, deviceId) {
 
 export const handlers = {
   async 'GET hello'(db) {
-    return [200, { app: 'clinic-os', hubId: await config(db, 'serverId'), time: Date.now() }];
+    // Database round-trip time helps spot a server and database in different regions.
+    const t = Date.now();
+    await db.query('select 1');
+    return [200, { app: 'clinic-os', hubId: await serverId(db), time: Date.now(), region: process.env.VERCEL_REGION || 'local', dbMs: Date.now() - t }];
   },
 
   async 'POST pair'(db, body) {
@@ -89,13 +100,13 @@ export const handlers = {
        on conflict (device_id) do update set name = excluded.name, token = excluded.token, paired_at = now()`,
       [body.deviceId, body.name || 'Phone', token],
     );
-    return [200, { hubId: await config(db, 'serverId'), token }];
+    return [200, { hubId: await serverId(db), token }];
   },
 
   async 'POST sync'(db, body) {
     if (!(await authed(db, body))) return [401, { error: 'This phone is not set up for the clinic. Set it up again with the clinic code.' }];
-    const serverId = await config(db, 'serverId');
-    if (body.hubId && body.hubId !== serverId) return [409, { error: 'Different clinic server' }];
+    const sid = await serverId(db);
+    if (body.hubId && body.hubId !== sid) return [409, { error: 'Different clinic server' }];
     const changes = body.changes || [];
     if (changes.length || body.device) {
       await db.tx(async (q) => {
@@ -112,7 +123,7 @@ export const handlers = {
     const docs = rows.slice(0, PAGE).map(rowToDoc);
     let seq = since;
     if (docs.length) seq = docs[docs.length - 1]._seq;
-    return [200, { hubId: serverId, applied: changes.length, docs, more, seq }];
+    return [200, { hubId: sid, applied: changes.length, docs, more, seq, time: Date.now() }];
   },
 
   async 'POST idblock'(db, body) {
@@ -128,7 +139,7 @@ export const handlers = {
   async 'POST backup'(db, body) {
     if (!(await authed(db, body))) return [401, { error: 'This phone is not set up for the clinic.' }];
     const { rows } = await db.query('select data, seq from docs order by seq');
-    return [200, { hubId: await config(db, 'serverId'), exportedAt: Date.now(), docs: rows.map(rowToDoc) }];
+    return [200, { hubId: await serverId(db), exportedAt: Date.now(), docs: rows.map(rowToDoc) }];
   },
 };
 
