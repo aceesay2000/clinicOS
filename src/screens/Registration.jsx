@@ -3,13 +3,14 @@ import { useDB } from '../hooks.js';
 import * as M from '../lib/model.js';
 import { COMPLAINTS, ageLabel, parseAge } from '../lib/clinical.js';
 import { ensureIdBlock, nextClinicNumber, remainingNumbers } from '../lib/ids.js';
-import { Chips, QR, Scanner, Seg, SyncBadge, useToast } from '../components/ui.jsx';
+import { Chips, QR, Scanner, Seg, SyncBadge, useConfirm, useToast } from '../components/ui.jsx';
 
 const EMPTY = { name: '', sex: '', ageText: '', phone: '', household: '', village: '', guardian: '' };
 
 export default function Registration() {
   useDB();
   const toast = useToast();
+  const confirm = useConfirm();
   const s = M.settings();
   const [q, setQ] = useState('');
   const [form, setForm] = useState(EMPTY);
@@ -77,7 +78,7 @@ export default function Registration() {
     if (!existing) {
       const dup = M.patients().find((p) => p.name?.trim().toLowerCase() === form.name.trim().toLowerCase()
         && (p.village || '') === form.village && Math.abs((M.ageOf(p) ?? 0) - age.age) <= 2);
-      if (dup && !window.confirm(`${dup.name} (${dup.clinicId}, ${dup.village || 'no village'}) is already registered. Register a NEW patient anyway?`)) return;
+      if (dup && !(await confirm(`${dup.name} (${dup.clinicId}, ${dup.village || 'no village'}) is already registered. Register a NEW patient anyway?`, 'Register new patient'))) return;
     }
 
     setSaving(true);

@@ -26,7 +26,7 @@ The hub prints a **pairing code** and the addresses to open on tablets, e.g.
 ```
 
 1. On the laptop open `http://localhost:8080`, choose **Admin**, enter the pairing code.
-2. **Stock → Load formulary CSV** (start from `public/formulary-template.csv`), or *Load sample list* for a dry run.
+2. **Stock → Load formulary CSV** (tap **Template** for the column layout), or *Load sample list* for a dry run.
 3. **Admin → Station PINs**: replace the default PIN `1234` for every station.
 4. On each tablet: join the clinic Wi-Fi, open the "On tablets" address, pick the station, enter the pairing code.
 

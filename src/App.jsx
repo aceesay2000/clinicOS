@@ -42,7 +42,9 @@ export default function App() {
   const [device, setDevice] = useState(null);
   const [role, setRole] = useState(null); // null = locked
   const [view, setView] = useState(null);
-  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem('theme') || 'light'; } catch { return 'light'; }
+  });
 
   useEffect(() => {
     (async () => {
@@ -108,6 +110,11 @@ export default function App() {
       <div className="app">
         <TopBar device={device} role={role} views={views} current={current} setView={setView}
           theme={theme} setTheme={setTheme} onLock={() => setRole(null)} />
+        {!db.isPersistent() && (
+          <div className="banner red" role="alert" style={{ borderRadius: 0 }}>
+            This browser is not letting ClinicOS save data. Records disappear when this page closes — do not use it for real patients.
+          </div>
+        )}
         <main className="main">
           <Screen device={device} role={role} saveDevice={saveDevice} setView={setView} />
         </main>

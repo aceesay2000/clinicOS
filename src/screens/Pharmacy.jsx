@@ -3,13 +3,14 @@ import * as db from '../db/local.js';
 import { useDB, useNow } from '../hooks.js';
 import * as M from '../lib/model.js';
 import { doseText, medName } from '../lib/clinical.js';
-import { Modal, PrintPortal, useToast } from '../components/ui.jsx';
+import { Modal, PrintPortal, useConfirm, useToast } from '../components/ui.jsx';
 import Slip from '../components/Slip.jsx';
 
 export default function Pharmacy({ device }) {
   useDB();
   useNow();
   const toast = useToast();
+  const confirm = useConfirm();
   const [tab, setTab] = useState('pack');
   const [selected, setSelected] = useState(null);
   const [printing, setPrinting] = useState(null);
@@ -34,7 +35,7 @@ export default function Pharmacy({ device }) {
   };
 
   const notCollected = async () => {
-    if (!window.confirm('Release the reserved medicines back to stock?')) return;
+    if (!(await confirm('Release the reserved medicines back to stock?', 'Release'))) return;
     await M.releaseVisit(visit);
     toast(`${visit.clinicId} released back to stock`);
     setSelected(null);

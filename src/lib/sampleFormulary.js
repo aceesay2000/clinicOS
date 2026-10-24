@@ -1,4 +1,6 @@
-name,strength,form,unit,batch,expiry,starting_count,low_threshold,alternatives
+// Sample formulary for dry runs and as the CSV template. The clinic replaces
+// this with its real medicine list and counts before clinic day.
+export const SAMPLE_FORMULARY = `name,strength,form,unit,batch,expiry,starting_count,low_threshold,alternatives
 Paracetamol,500 mg,tablet,tab,PC2401,2028-06-30,2000,200,Ibuprofen
 Ibuprofen,400 mg,tablet,tab,IB2402,2027-12-31,600,60,Paracetamol
 Amoxicillin,250 mg,capsule,cap,AM2403,2027-09-30,500,60,Amoxicillin 500 mg; Co-trimoxazole
@@ -28,3 +30,4 @@ Clotrimazole cream,1%,cream 20 g,tube,CL2426,2027-10-31,50,10,
 Benzyl benzoate lotion,25%,lotion 100 ml,bottle,BB2427,2027-07-31,30,6,
 Paracetamol syrup,120 mg/5 ml,syrup 60 ml,bottle,PS2428,2027-04-30,60,10,Ibuprofen syrup
 Ibuprofen syrup,100 mg/5 ml,syrup 100 ml,bottle,IS2429,2027-05-31,30,6,Paracetamol syrup
+`;
