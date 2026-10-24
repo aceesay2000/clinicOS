@@ -1,7 +1,7 @@
 import { parseCSV } from './csv.js';
 import * as M from './model.js';
 
-/** Load formulary + starting stock rows (see public/formulary-template.csv). */
+/** Load formulary + starting stock rows (columns as in SAMPLE_FORMULARY). */
 export async function importFormulary(text) {
   const rows = parseCSV(text);
   const existing = M.medicines();
