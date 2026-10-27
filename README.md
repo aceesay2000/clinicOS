@@ -13,14 +13,21 @@ everything is sent automatically when the connection is back.
 1. Every volunteer opens the clinic's web address in Chrome (and taps *Add to Home screen*).
 2. They choose their station, type the **clinic code** (from the admin) and tap Start. Default PIN: `1234`.
 3. The screen locks after 2 minutes idle; the station PIN unlocks it. The admin PIN unlocks any station.
-4. At the end of the day the admin opens **Report** (CSV exports) and **Admin → Download full backup**,
+4. **Find patient** (top bar, every station) searches by name, card, phone or household and shows where the
+   patient is now plus every past clinic day. Registration sees the journey; clinical stations also see
+   vitals, diagnoses and medicines.
+5. **Switch station** by tapping the station name in the top bar and entering that station’s PIN, e.g. a
+   registration volunteer covering the doctor’s queue.
+6. At the end of the day the admin opens **Report** (CSV exports) and **Admin → Download full backup**,
    then each volunteer phone is cleared with **Admin → Wipe this phone**.
 
 ## Before clinic day (admin)
 
 - **Stock → Load formulary CSV** with the real medicine list and counts (tap **Template** for the columns).
 - **Admin → Station PINs**: replace the default `1234` for every station.
-- **Admin → Clinic day**: date, village list, clinic phone number for slips.
+- **Admin → Clinic day**: date, village list, clinic phone number for slips. Every station warns if the
+  clinic day isn't today's date, so last year's date can't be used by mistake.
+- **Report** opens any past clinic day; returning patients are found by search and their history follows them.
 - **Admin → Pre-printed patient cards**: print QR cards; each registration phone gets its own number block.
 - Clinical leads review the vitals ranges and diagnosis lists in `src/lib/clinical.js`.
 - Dry run with ~30 mock patients and real volunteers.
