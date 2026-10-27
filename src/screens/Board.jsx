@@ -2,12 +2,12 @@ import { useState } from 'react';
 import * as db from '../db/local.js';
 import { useDB, useNow } from '../hooks.js';
 import * as M from '../lib/model.js';
-import { STATIONS, ageLabel, bpText, medName } from '../lib/clinical.js';
-import { Modal, useToast } from '../components/ui.jsx';
+import { ageLabel, bpText, medName } from '../lib/clinical.js';
+import { FindPatient } from '../components/PatientRecord.jsx';
 
 const SHOW = 5;
 
-export default function Board({ setView }) {
+export default function Board({ setView, role }) {
   useDB();
   useNow(15000);
   const [open, setOpen] = useState(null);
@@ -38,7 +38,7 @@ export default function Board({ setView }) {
       </div>
 
       <Devices />
-      {open && <PatientModal visitId={open} onClose={() => setOpen(null)} />}
+      {open && <FindPatient role={role} initialPatientId={db.get(open)?.patientId} onClose={() => setOpen(null)} />}
     </div>
   );
 }
@@ -92,7 +92,7 @@ function Devices() {
         <b>Devices</b>
         {devices.map((d) => {
           const ago = M.minutesSince(d.lastSeen);
-          const ok = Date.now() - d.lastSeen < 45000;
+          const ok = db.now() - d.lastSeen < 45000;
           return (
             <span key={d.id} className="sync small">
               <i className={'dot ' + (ok ? 'ok' : 'warn')} /> {d.name}
@@ -102,50 +102,5 @@ function Devices() {
         })}
       </div>
     </div>
-  );
-}
-
-function PatientModal({ visitId, onClose }) {
-  useDB();
-  const toast = useToast();
-  const v = db.get(visitId);
-  const p = M.patientOf(v);
-  const events = db.all('event').filter((e) => e.visitId === visitId).sort((a, b) => a.at - b.at);
-  const items = M.rxItems(visitId);
-  const reserved = items.filter((i) => i.status === 'reserved');
-  const time = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-  const move = async (station) => {
-    await M.moveTo(v, station);
-    toast(`${v.clinicId} moved to ${STATIONS.find((s) => s.id === station).label}`);
-  };
-
-  return (
-    <Modal onClose={onClose}>
-      <h2>{p?.name} · <span className="mono">{v.clinicId}</span></h2>
-      <p className="muted">{p?.sex} · {ageLabel(p)} · {p?.village} · {(v.complaints || []).join(', ')}</p>
-      <div className="label">Journey</div>
-      {events.map((e) => (
-        <div key={e.id} className="kv small"><span>{STATIONS.find((s) => s.id === e.station)?.label || e.station} · {e.kind}</span><span className="mono">{time(e.at)}</span></div>
-      ))}
-      <div className="label" style={{ marginTop: 14 }}>Move patient to</div>
-      <div className="chips">
-        {STATIONS.filter((s) => s.id !== 'registration').map((s) => (
-          <button key={s.id} className={'chip' + (v.station === s.id ? ' on' : '')} disabled={v.station === s.id} onClick={() => move(s.id)}>{s.label}</button>
-        ))}
-      </div>
-      <div className="row" style={{ marginTop: 14 }}>
-        <button className={'btn' + (v.urgent ? ' danger' : '')} onClick={() => db.put('visit', v.id, { urgent: !v.urgent, urgentReason: v.urgent ? '' : 'Marked urgent by clinic lead' })}>
-          {v.urgent ? 'Remove urgent' : 'Mark urgent'}
-        </button>
-        {reserved.length > 0 && (
-          <button className="btn" onClick={async () => { await M.releaseVisit(v); toast('Reserved stock released'); onClose(); }}>
-            Release reserved stock ({reserved.length})
-          </button>
-        )}
-        <span style={{ flex: 1 }} />
-        <button className="btn" onClick={onClose}>Close</button>
-      </div>
-    </Modal>
   );
 }

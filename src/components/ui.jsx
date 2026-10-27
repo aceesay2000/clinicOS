@@ -38,11 +38,11 @@ export function SyncBadge() {
   const s = useSyncStatus();
   const waiting = s.pending ? ` · ${s.pending} change${s.pending === 1 ? '' : 's'} waiting to sync` : '';
   let dot = 'warn', text;
-  if (s.state === 'unpaired') text = `Not paired with hub · saved on this tablet${waiting}`;
-  else if (s.state === 'synced') { dot = 'ok'; text = 'Synced to hub'; }
+  if (s.state === 'unpaired') text = `Not set up · saved on this phone${waiting}`;
+  else if (s.state === 'synced') { dot = 'ok'; text = 'Synced'; }
   else if (s.state === 'syncing') { dot = 'ok'; text = `Syncing${waiting}`; }
   else if (s.state === 'error') { dot = 'bad'; text = `Sync problem${waiting}`; }
-  else text = `Offline${waiting || ' · saved on this tablet'}`;
+  else text = `Offline${waiting || ' · saved on this phone'}`;
   return (
     <span className="sync" title={s.message || ''}>
       <i className={'dot ' + dot} /> {text}
@@ -105,6 +105,33 @@ export function Modal({ children, onClose }) {
   );
 }
 
+const ConfirmCtx = createContext(async () => false);
+/** In-app yes/no question (the browser's confirm() is blocked in some embedded views). */
+export const useConfirm = () => useContext(ConfirmCtx);
+
+export function ConfirmProvider({ children }) {
+  const [ask, setAsk] = useState(null);
+  const confirm = (message, yes = 'Yes') => new Promise((resolve) => setAsk({ message, yes, resolve }));
+  const answer = (v) => {
+    ask.resolve(v);
+    setAsk(null);
+  };
+  return (
+    <ConfirmCtx.Provider value={confirm}>
+      {children}
+      {ask && (
+        <Modal onClose={() => answer(false)}>
+          <p style={{ fontSize: 18, marginTop: 0 }}>{ask.message}</p>
+          <div className="row" style={{ justifyContent: 'flex-end' }}>
+            <button className="btn" onClick={() => answer(false)}>Cancel</button>
+            <button className="btn primary" onClick={() => answer(true)} autoFocus>{ask.yes}</button>
+          </div>
+        </Modal>
+      )}
+    </ConfirmCtx.Provider>
+  );
+}
+
 const ToastCtx = createContext(() => {});
 export const useToast = () => useContext(ToastCtx);
 
@@ -118,7 +145,7 @@ export function ToastProvider({ children }) {
   };
   return (
     <ToastCtx.Provider value={show}>
-      {children}
+      <ConfirmProvider>{children}</ConfirmProvider>
       {msg && <div className="toast" role="status">{msg}</div>}
     </ToastCtx.Provider>
   );

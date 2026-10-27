@@ -1,5 +1,5 @@
 // Clinic records and the actions stations take on them. Every action is a
-// local write (see db/local.js), so it works the same with or without the hub.
+// local write (see db/local.js), so it works the same with or without a connection.
 
 import * as db from '../db/local.js';
 import { calcQty, ageOf, DEFAULT_VILLAGES } from './clinical.js';
@@ -62,10 +62,26 @@ export const idNumber = (clinicId) => Number(String(clinicId || '').replace(/\D/
 export const patients = memo(() => db.all('patient').filter((p) => !p.removed));
 export const medicines = memo(() => db.all('medicine').filter((m) => !m.archived).sort((a, b) => a.name.localeCompare(b.name)));
 
-export const visitsToday = memo(() => {
-  const day = settings().day;
-  return db.all('visit').filter((v) => v.day === day && !v.removed);
+const visitsByDay = memo(() => {
+  const m = new Map();
+  for (const v of db.all('visit')) {
+    if (v.removed) continue;
+    if (!m.has(v.day)) m.set(v.day, []);
+    m.get(v.day).push(v);
+  }
+  return m;
 });
+
+export const visitsOn = (day) => visitsByDay().get(day) || [];
+export const visitsToday = () => visitsOn(settings().day);
+
+/** Every clinic day with records, newest first: [{ day, count }]. */
+export function clinicDays() {
+  return [...visitsByDay().entries()].map(([day, v]) => ({ day, count: v.length })).sort((a, b) => b.day.localeCompare(a.day));
+}
+
+/** True when the clinic day in settings is not today's date (e.g. left over from last year). */
+export const dayIsStale = () => settings().day !== localDay(new Date(db.now()));
 
 const byVisit = (type) => memo(() => {
   const m = new Map();
@@ -134,7 +150,7 @@ export function queue(station) {
   return list.sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || a.stationSince - b.stationSince);
 }
 
-export const minutesSince = (t) => (t ? Math.max(0, Math.floor((Date.now() - t) / 60000)) : 0);
+export const minutesSince = (t) => (t ? Math.max(0, Math.floor((db.now() - t) / 60000)) : 0);
 
 // ---------- stock ----------
 
@@ -174,12 +190,12 @@ function movement(medicineId, kind, qty, delta, extra = {}) {
 // ---------- actions ----------
 
 function event(visitId, station, kind) {
-  return db.put('event', null, { visitId, station, kind, at: Date.now() });
+  return db.put('event', null, { visitId, station, kind, at: db.now() });
 }
 
 export async function moveTo(visit, station, fields = {}) {
   if (visit.station && visit.station !== station) await event(visit.id, visit.station, 'finished');
-  await db.put('visit', visit.id, { station, stationSince: Date.now(), ...fields });
+  await db.put('visit', visit.id, { station, stationSince: db.now(), ...fields });
   await event(visit.id, station, 'arrived');
 }
 
@@ -189,7 +205,7 @@ export async function registerPatient({ patientId, patient, complaints, consent,
   if (existing) return { patient: p, visit: existing, existing: true };
   const visit = await db.put('visit', null, {
     patientId: p.id, clinicId, day: settings().day, complaints, consent: !!consent,
-    station: 'vitals', stationSince: Date.now(), urgent: false, status: 'open',
+    station: 'vitals', stationSince: db.now(), urgent: false, status: 'open',
   });
   await event(visit.id, 'registration', 'finished');
   await event(visit.id, 'vitals', 'arrived');
@@ -207,7 +223,7 @@ export async function saveVitals(visit, vitals, { urgent, urgentReason, send }) 
  * against stock, and the order appears on the pharmacy list.
  */
 export async function finishConsult(visit, consult, items, doctor) {
-  await db.put('consult', 'consult:' + visit.id, { visitId: visit.id, ...consult, doctor, finishedAt: Date.now() });
+  await db.put('consult', 'consult:' + visit.id, { visitId: visit.id, ...consult, doctor, finishedAt: db.now() });
   for (const it of items) {
     const m = db.get(it.medicineId);
     const qty = calcQty(it, m);
@@ -239,10 +255,10 @@ export async function setPacked(visit, packed) {
 export async function dispense(visit, by) {
   for (const it of rxItems(visit.id)) {
     if (it.status !== 'reserved') continue;
-    await db.put('rxitem', it.id, { status: 'dispensed', dispensedAt: Date.now(), dispensedBy: by });
+    await db.put('rxitem', it.id, { status: 'dispensed', dispensedAt: db.now(), dispensedBy: by });
     await movement(it.medicineId, 'dispensed', it.qty, -Number(it.qty), { visitId: visit.id, itemId: it.id });
   }
-  await moveTo(visit, 'done', { status: 'dispensed', dispensedAt: Date.now() });
+  await moveTo(visit, 'done', { status: 'dispensed', dispensedAt: db.now() });
 }
 
 /** Patient left without collecting: give the reserved stock back. */
@@ -274,8 +290,8 @@ export async function saveMedicine(id, fields, startingCount) {
 
 // ---------- reports ----------
 
-export function dayReport() {
-  const visits = visitsToday();
+export function dayReport(day = settings().day) {
+  const visits = visitsOn(day);
   const seen = visits.filter((v) => consultFor(v.id)?.finishedAt);
   const dispensed = visits.filter((v) => v.status === 'dispensed');
   const urgentWaiting = visits.filter((v) => v.urgent && v.station !== 'done');

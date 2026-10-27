@@ -5,14 +5,13 @@ import { ROLES } from '../lib/clinical.js';
 import { Chips } from '../components/ui.jsx';
 
 const DEFAULT_NAMES = {
-  registration: 'Desk 1', vitals: 'Table 1', doctor: 'Room A', pharmacy: 'Pharmacy', lead: 'Lead tablet', admin: 'Hub laptop',
+  registration: 'Desk 1', vitals: 'Table 1', doctor: 'Room A', pharmacy: 'Pharmacy', lead: 'Clinic lead', admin: 'Admin',
 };
 
-/** First run on a tablet: name it, give it a station, pair with the hub. */
+/** First run on a phone: choose its station, name it, enter the clinic code. */
 export default function Setup({ onDone, existing }) {
   const [station, setStation] = useState(existing?.station || 'registration');
   const [name, setName] = useState(existing?.name || DEFAULT_NAMES.registration);
-  const [hubUrl, setHubUrl] = useState(existing?.hubUrl || window.location.origin);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -23,57 +22,48 @@ export default function Setup({ onDone, existing }) {
     setStation(r.id);
   };
 
-  const finish = async (pairing) => {
-    const dev = { deviceId: existing?.deviceId || db.uuid(), name: name.trim() || 'Tablet', station, ...(pairing || {}) };
-    if (existing && !pairing) Object.assign(dev, { hubUrl: existing.hubUrl, hubId: existing.hubId, token: existing.token });
-    onDone(dev);
-  };
-
-  const pairNow = async () => {
+  const start = async () => {
     setBusy(true);
     setError('');
     try {
       const deviceId = existing?.deviceId || db.uuid();
-      const p = await sync.pair(hubUrl, code.trim(), deviceId, name);
-      onDone({ deviceId, name: name.trim() || 'Tablet', station, ...p });
+      const p = await sync.pair('', code.trim(), deviceId, name);
+      onDone({ deviceId, name: name.trim() || 'Phone', station, ...p });
     } catch (e) {
-      setError(e.name === 'AbortError' || e instanceof TypeError ? 'Cannot reach the hub at that address. Check the clinic Wi-Fi.' : e.message);
+      setError(e.name === 'AbortError' || e instanceof TypeError
+        ? 'No internet connection. Setting up a phone needs the internet once — try again when connected.'
+        : e.message);
     } finally {
       setBusy(false);
     }
   };
 
+  // Changing station later doesn't need the code again.
+  const keepPairing = () => onDone({ ...existing, name: name.trim() || 'Phone', station });
+
   return (
     <div className="page" style={{ maxWidth: 720 }}>
-      <h1 style={{ marginTop: 12 }}>{existing ? 'Change tablet setup' : 'Set up this tablet'}</h1>
-      <p className="muted">Each tablet is locked to one station. Everything is saved on the tablet first and copied to the hub laptop whenever it is in range.</p>
+      <h1 style={{ marginTop: 12 }}>{existing ? 'Change station' : 'Set up this phone'}</h1>
+      <p className="muted">Each phone works one station. Everything is saved on the phone first, so a dropped connection never loses a record — it catches up as soon as the internet is back.</p>
 
       <div className="card">
-        <label className="label">1 · Which station is this tablet for?</label>
+        <label className="label">Which station is this phone for?</label>
         <Chips multi={false} options={ROLES.map((r) => r.label)} value={ROLES.find((r) => r.id === station)?.label} onChange={(l) => l && pickStation(l)} />
         <div className="field" style={{ marginTop: 14 }}>
-          <label className="label" htmlFor="tname">Tablet name (shown on the lead board)</label>
+          <label className="label" htmlFor="tname">Name shown on the lead board</label>
           <input id="tname" className="input" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
-      </div>
-
-      <div className="card">
-        <label className="label">2 · Pair with the hub laptop</label>
-        <p className="small muted" style={{ marginTop: 0 }}>The pairing code is shown on the hub laptop when it starts. Data is only ever sent to this hub.</p>
-        <div className="grid2">
+        {!existing?.token && (
           <div className="field">
-            <label className="label" htmlFor="hub">Hub address</label>
-            <input id="hub" className="input" value={hubUrl} onChange={(e) => setHubUrl(e.target.value)} inputMode="url" />
+            <label className="label" htmlFor="code">Clinic code (from the admin)</label>
+            <input id="code" className="input big mono" style={{ maxWidth: 260 }} value={code} onChange={(e) => setCode(e.target.value.trim())} inputMode="numeric" autoComplete="off" />
           </div>
-          <div className="field">
-            <label className="label" htmlFor="code">Pairing code</label>
-            <input id="code" className="input big mono" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" placeholder="000000" />
-          </div>
-        </div>
+        )}
         {error && <p className="err" role="alert">{error}</p>}
         <div className="row" style={{ marginTop: 6 }}>
-          <button className="btn primary" disabled={busy || code.length !== 6} onClick={pairNow}>{busy ? 'Pairing…' : 'Pair and start'}</button>
-          <button className="btn" disabled={busy} onClick={() => finish(null)}>{existing ? 'Save without re-pairing' : 'Start offline — pair later'}</button>
+          {existing?.token
+            ? <button className="btn primary" onClick={keepPairing}>Save</button>
+            : <button className="btn primary" disabled={busy || !code} onClick={start}>{busy ? 'Checking…' : 'Start'}</button>}
         </div>
       </div>
       {!existing && <p className="small muted">First unlock uses the default PIN 1234. The admin should change PINs before clinic day.</p>}

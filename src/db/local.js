@@ -15,7 +15,7 @@ const listeners = new Set();
 let version = 0;
 
 export function uuid() {
-  // crypto.randomUUID only exists in secure contexts; tablets reach the hub over plain http.
+  // crypto.randomUUID only exists in secure contexts (not on plain-http local runs).
   const b = crypto.getRandomValues(new Uint8Array(16));
   b[6] = (b[6] & 0x0f) | 0x40;
   b[8] = (b[8] & 0x3f) | 0x80;
@@ -38,20 +38,68 @@ function done(tx) {
   });
 }
 
+let persistent = true;
+/** False when the browser refused storage and records live only in memory. */
+export const isPersistent = () => persistent;
+
 export async function openDB() {
-  const open = indexedDB.open(DB_NAME, DB_VERSION);
-  open.onupgradeneeded = () => {
-    const db = open.result;
-    db.createObjectStore('docs', { keyPath: 'id' });
-    db.createObjectStore('outbox', { keyPath: 'id' });
-    db.createObjectStore('meta');
-  };
-  idb = await req(open);
+  try {
+    const open = indexedDB.open(DB_NAME, DB_VERSION);
+    open.onupgradeneeded = () => {
+      const db = open.result;
+      db.createObjectStore('docs', { keyPath: 'id' });
+      db.createObjectStore('outbox', { keyPath: 'id' });
+      db.createObjectStore('meta');
+    };
+    idb = await Promise.race([req(open), new Promise((_, no) => setTimeout(() => no(new Error('timeout')), 4000))]);
+  } catch {
+    // Private windows and some embedded views block storage. Keep working,
+    // but the app warns loudly that nothing survives closing the page.
+    persistent = false;
+    idb = memoryDB();
+  }
   const all = await req(idb.transaction('docs').objectStore('docs').getAll());
   for (const d of all) docs.set(d.id, d);
   // Ask the browser not to evict our data under storage pressure.
   navigator.storage?.persist?.().catch(() => {});
   notify();
+}
+
+/** Minimal in-memory stand-in with the slice of the IndexedDB API used here. */
+function memoryDB() {
+  const stores = { docs: new Map(), outbox: new Map(), meta: new Map() };
+  const keyPaths = { docs: 'id', outbox: 'id', meta: null };
+  return {
+    transaction(names) {
+      const tx = {};
+      let open = 0;
+      const finish = () => setTimeout(() => open === 0 && tx.oncomplete?.(), 0);
+      const request = (fn) => {
+        const r = {};
+        open++;
+        queueMicrotask(() => {
+          r.result = fn();
+          r.onsuccess?.();
+          open--;
+          finish();
+        });
+        return r;
+      };
+      tx.objectStore = (name) => {
+        const m = stores[name], kp = keyPaths[name];
+        return {
+          get: (k) => request(() => structuredClone(m.get(k))),
+          getAll: () => request(() => [...m.values()].map((v) => structuredClone(v))),
+          count: () => request(() => m.size),
+          put: (v, k) => request(() => m.set(kp ? v[kp] : k, structuredClone(v))),
+          delete: (k) => request(() => m.delete(k)),
+          clear: () => request(() => m.clear()),
+        };
+      };
+      finish();
+      return tx;
+    },
+  };
 }
 
 // ---------- meta (device settings) ----------
@@ -91,16 +139,23 @@ function notify() {
 let deviceId = null;
 export const setDeviceId = (id) => (deviceId = id);
 
+// Server time minus this phone's clock, learned on each sync. Volunteers'
+// phones are not always set to the right time; wait times and "newest edit
+// wins" both rely on timestamps that agree across phones.
+let clockOffset = 0;
+export const setClockOffset = (ms) => { if (Number.isFinite(ms)) clockOffset = Math.round(ms); };
+export const now = () => Date.now() + clockOffset;
+
 /**
  * Create or update a record. Only `fields` are changed; other fields are kept.
  * Returns the saved doc. Resolves once the change is durable on this device.
  */
 export async function put(type, id, fields) {
   id ||= uuid();
-  const now = Date.now();
+  const ts = now();
   const prev = docs.get(id);
-  const change = { ...fields, updatedAt: now, updatedBy: deviceId };
-  if (!prev) change.createdAt = fields.createdAt || now;
+  const change = { ...fields, updatedAt: ts, updatedBy: deviceId };
+  if (!prev) change.createdAt = fields.createdAt || ts;
   const doc = { ...(prev || { id, type }), ...change };
   docs.set(id, doc);
 
@@ -111,7 +166,7 @@ export async function put(type, id, fields) {
     id, type,
     base: pending ? pending.base : prev?._seq || 0,
     fields: { ...(pending?.fields || {}), ...change },
-    ts: now,
+    ts,
   });
   tx.objectStore('docs').put(doc);
   await done(tx);
@@ -134,8 +189,8 @@ export async function pendingCount() {
 }
 
 /**
- * After a sync round trip: drop outbox entries the hub accepted (unless edited
- * again meanwhile), then apply the hub's docs. Local unsynced fields stay on top.
+ * After a sync round trip: drop outbox entries the server accepted (unless edited
+ * again meanwhile), then apply the server's docs. Local unsynced fields stay on top.
  */
 export async function applySync(sent, incoming) {
   const tx = idb.transaction(['docs', 'outbox'], 'readwrite');
@@ -155,7 +210,7 @@ export async function applySync(sent, incoming) {
   if (incoming.length) notify();
 }
 
-/** Remove every record from this tablet (after the hub backup is confirmed). */
+/** Remove every record from this phone (after the server backup is confirmed). */
 export async function wipe() {
   const tx = idb.transaction(['docs', 'outbox', 'meta'], 'readwrite');
   tx.objectStore('docs').clear();

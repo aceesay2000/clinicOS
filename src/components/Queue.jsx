@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { useNow } from '../hooks.js';
 import * as M from '../lib/model.js';
 import { STATIONS, ageLabel } from '../lib/clinical.js';
-import { Scanner, useToast } from './ui.jsx';
+import { Scanner, useConfirm, useToast } from './ui.jsx';
 
 /** Left-hand waiting list shared by Vitals and Doctor. */
 export default function Queue({ station, selected, onSelect, renderMeta }) {
   useNow();
   const toast = useToast();
+  const confirm = useConfirm();
   const [lookup, setLookup] = useState('');
   const [scan, setScan] = useState(false);
   const list = M.queue(station);
@@ -18,7 +19,7 @@ export default function Queue({ station, selected, onSelect, renderMeta }) {
     if (!v) return toast(`No patient registered today with card ${text}`);
     if (v.station !== station) {
       const here = STATIONS.find((s) => s.id === v.station)?.label;
-      if (!window.confirm(`${p.name} is listed at ${here}. Bring them to this station?`)) return;
+      if (!(await confirm(`${p.name} is listed at ${here}. Bring them to this station?`, 'Bring here'))) return;
       await M.moveTo(v, station);
     }
     onSelect(v.id);

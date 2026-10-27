@@ -1,4 +1,4 @@
-// Patient card numbers (DFC-0001). The hub hands each registration tablet a
+// Patient card numbers (DFC-0001). The server hands each registration phone a
 // block of numbers, so two desks never issue the same number even when they
 // are both offline. A pre-printed card number can always be typed in instead.
 

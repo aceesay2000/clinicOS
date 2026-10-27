@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import * as db from './db/local.js';
 import * as sync from './db/sync.js';
 import { useDB } from './hooks.js';
-import { checkPin, settings } from './lib/model.js';
+import { checkPin, dayIsStale, localDay, saveSettings, settings } from './lib/model.js';
 import { ROLES } from './lib/clinical.js';
-import { PinPad, SyncBadge, ToastProvider } from './components/ui.jsx';
+import { Modal, PinPad, SyncBadge, ToastProvider } from './components/ui.jsx';
+import { FindPatient } from './components/PatientRecord.jsx';
 import Setup from './screens/Setup.jsx';
 import Registration from './screens/Registration.jsx';
 import Vitals from './screens/Vitals.jsx';
@@ -41,8 +42,13 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [device, setDevice] = useState(null);
   const [role, setRole] = useState(null); // null = locked
+  const [lastRole, setLastRole] = useState(null); // station to return to after the lock
   const [view, setView] = useState(null);
-  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
+  const [finding, setFinding] = useState(false);
+  const [switching, setSwitching] = useState(false);
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem('theme') || 'light'; } catch { return 'light'; }
+  });
 
   useEffect(() => {
     (async () => {
@@ -64,7 +70,7 @@ export default function App() {
     let t;
     const reset = () => {
       clearTimeout(t);
-      t = setTimeout(() => setRole(null), IDLE_LOCK_MS);
+      t = setTimeout(() => lock(), IDLE_LOCK_MS);
     };
     const evs = ['pointerdown', 'keydown', 'scroll'];
     evs.forEach((e) => window.addEventListener(e, reset, { passive: true }));
@@ -74,6 +80,20 @@ export default function App() {
       evs.forEach((e) => window.removeEventListener(e, reset));
     };
   }, [role]);
+
+  function lock() {
+    setRole((r) => {
+      if (r) setLastRole(r);
+      return null;
+    });
+    setFinding(false);
+    setSwitching(false);
+  }
+
+  const enter = (r) => {
+    setRole(r);
+    setView(null);
+  };
 
   function activate(dev) {
     db.setDeviceId(dev.deviceId);
@@ -97,7 +117,7 @@ export default function App() {
     );
   }
 
-  if (!role) return <Lock device={device} onUnlock={(r) => { setRole(r); setView(null); }} />;
+  if (!role) return <Lock device={device} lastRole={lastRole} onUnlock={enter} />;
 
   const views = VIEWS_FOR[role] || [];
   const current = view && views.includes(view) ? view : views[0];
@@ -107,24 +127,32 @@ export default function App() {
     <ToastProvider>
       <div className="app">
         <TopBar device={device} role={role} views={views} current={current} setView={setView}
-          theme={theme} setTheme={setTheme} onLock={() => setRole(null)} />
+          theme={theme} setTheme={setTheme} onLock={lock} onFind={() => setFinding(true)} onSwitch={() => setSwitching(true)} />
+        <StaleDayBanner canFix={role === 'admin' || role === 'lead'} />
+        {!db.isPersistent() && (
+          <div className="banner red" role="alert" style={{ borderRadius: 0 }}>
+            This browser is not letting ClinicOS save data. Records disappear when this page closes — do not use it for real patients.
+          </div>
+        )}
         <main className="main">
           <Screen device={device} role={role} saveDevice={saveDevice} setView={setView} />
         </main>
+        {finding && <FindPatient role={role} onClose={() => setFinding(false)} />}
+        {switching && <SwitchStation current={role} onClose={() => setSwitching(false)} onSwitch={(r) => { setSwitching(false); enter(r); }} />}
       </div>
     </ToastProvider>
   );
 }
 
-function TopBar({ device, role, views, current, setView, theme, setTheme, onLock }) {
+function TopBar({ device, role, views, current, setView, theme, setTheme, onLock, onFind, onSwitch }) {
   useDB();
   const s = settings();
-  const roleLabel = ROLES.find((r) => r.id === device.station)?.label || device.station;
+  const roleLabel = ROLES.find((r) => r.id === role)?.label || role;
   return (
     <header className="topbar">
       <span className="brand">ClinicOS</span>
       <span className="clinic">{s.clinicName} · {s.eventName}</span>
-      <span className="station-pill">{roleLabel} · {device.name}{role === 'admin' && device.station !== 'admin' ? ' (admin)' : ''}</span>
+      <button className="station-pill" onClick={onSwitch} title="Switch station">{roleLabel} · {device.name} ⇄</button>
       {views.length > 1 && (
         <nav className="nav">
           {views.map((v) => (
@@ -134,6 +162,7 @@ function TopBar({ device, role, views, current, setView, theme, setTheme, onLock
       )}
       <span className="spacer" />
       <SyncBadge />
+      <button className="btn sm" onClick={onFind}>⌕ Find patient</button>
       <button className="btn sm" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Toggle low-brightness mode">
         {theme === 'dark' ? '☀' : '☾'}
       </button>
@@ -142,21 +171,69 @@ function TopBar({ device, role, views, current, setView, theme, setTheme, onLock
   );
 }
 
-function Lock({ device, onUnlock }) {
+function Lock({ device, lastRole, onUnlock }) {
   useDB();
   const [error, setError] = useState('');
-  const roleLabel = ROLES.find((r) => r.id === device.station)?.label;
+  // Unlock back into the station this phone was last working, or its own station.
+  const back = lastRole || device.station;
+  const roleLabel = ROLES.find((r) => r.id === back)?.label;
   const submit = useCallback((pin) => {
-    if (checkPin(device.station, pin)) return onUnlock(device.station);
+    if (checkPin(back, pin)) return onUnlock(back);
+    if (back !== device.station && checkPin(device.station, pin)) return onUnlock(device.station);
     if (checkPin('admin', pin)) return onUnlock('admin');
     setError('Wrong PIN — try again');
-  }, [device.station, onUnlock]);
+  }, [back, device.station, onUnlock]);
   return (
     <div className="lock">
       <div>
         <PinPad title={`${roleLabel} · ${device.name}`} subtitle="Enter the station PIN" onSubmit={submit} error={error} />
         <p className="center muted small" style={{ textAlign: 'center', marginTop: 18 }}><SyncBadge /></p>
       </div>
+    </div>
+  );
+}
+
+/** Work a different station on this phone, e.g. a registration volunteer covering the doctor's queue. */
+function SwitchStation({ current, onClose, onSwitch }) {
+  const [target, setTarget] = useState(null);
+  const [error, setError] = useState('');
+  const submit = useCallback((pin) => {
+    if (checkPin(target, pin) || checkPin('admin', pin)) return onSwitch(target);
+    setError(`Wrong PIN for ${ROLES.find((r) => r.id === target)?.label}`);
+  }, [target, onSwitch]);
+  return (
+    <Modal onClose={onClose}>
+      {!target ? (
+        <>
+          <h2>Switch station</h2>
+          <p className="muted">Work another station on this phone. You will need that station’s PIN.</p>
+          <div className="chips" style={{ marginTop: 12 }}>
+            {ROLES.map((r) => (
+              <button key={r.id} className={'chip' + (r.id === current ? ' on' : '')} disabled={r.id === current} onClick={() => setTarget(r.id)}>{r.label}</button>
+            ))}
+          </div>
+          <div className="row" style={{ justifyContent: 'flex-end', marginTop: 16 }}><button className="btn" onClick={onClose}>Cancel</button></div>
+        </>
+      ) : (
+        <PinPad title={ROLES.find((r) => r.id === target)?.label} subtitle="Enter this station’s PIN (or the admin PIN)" onSubmit={submit} error={error} onCancel={() => { setTarget(null); setError(''); }} />
+      )}
+    </Modal>
+  );
+}
+
+/** Warn every station when the clinic day in settings is not today (e.g. still last year’s date). */
+function StaleDayBanner({ canFix }) {
+  useDB();
+  if (!dayIsStale()) return null;
+  const today = localDay(new Date());
+  return (
+    <div className="banner amber" role="alert" style={{ borderRadius: 0 }}>
+      <span style={{ flex: 1 }}>
+        The clinic day is set to <b>{settings().day}</b>, but today is <b>{today}</b>. New patients are filed under {settings().day}, and today’s queues only show that day.
+      </span>
+      {canFix
+        ? <button className="btn sm" onClick={() => saveSettings({ day: today })}>Switch to today</button>
+        : <b>Tell the clinic lead or admin.</b>}
     </div>
   );
 }

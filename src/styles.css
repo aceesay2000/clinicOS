@@ -202,3 +202,28 @@ table.t td { padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-a
   #root { display: none !important; }
   #print-root { display: block; }
 }
+
+/* journey bar on the patient record */
+.journey { display: flex; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.j-step { flex: 1; text-align: center; padding: 10px 4px; font-size: 13px; font-weight: 700; background: var(--surface2); border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
+.j-step:last-child { border-right: 0; }
+.j-step.done { background: var(--accent); color: var(--accent-ink); }
+.j-step.now { background: var(--amber); color: var(--accent-ink); }
+.j-time { font-weight: 500; font-size: 12px; opacity: 0.9; }
+button.station-pill { border: 0; cursor: pointer; font: inherit; font-weight: 700; font-size: 14px; }
+details > summary { list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+
+/* ---------- phones ---------- */
+@media (max-width: 600px) {
+  .topbar { gap: 8px 10px; padding: 8px 12px; min-height: 0; }
+  .topbar .clinic { display: none; }
+  .topbar .btn { min-height: 36px; padding: 4px 10px; }
+  .nav { order: 10; width: 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .nav button { white-space: nowrap; }
+  .sync { font-size: 13px; }
+  .page, .split > section { padding: 12px; }
+  .grid4 { grid-template-columns: 1fr 1fr; }
+  .input.big { font-size: 22px; }
+  h1 { font-size: 22px; }
+}

@@ -4,6 +4,8 @@ import { useDB } from '../hooks.js';
 import * as M from '../lib/model.js';
 import { medName } from '../lib/clinical.js';
 import { importFormulary } from '../lib/formulary.js';
+import { SAMPLE_FORMULARY } from '../lib/sampleFormulary.js';
+import { download } from '../lib/csv.js';
 import { Modal, useToast } from '../components/ui.jsx';
 
 export default function Stock({ role }) {
@@ -23,8 +25,7 @@ export default function Stock({ role }) {
   };
 
   const loadSample = async () => {
-    const text = await fetch('/formulary-template.csv').then((r) => r.text());
-    const r = await importFormulary(text);
+    const r = await importFormulary(SAMPLE_FORMULARY);
     toast(`Sample formulary loaded: ${r.added} medicines`);
   };
 
@@ -37,7 +38,7 @@ export default function Stock({ role }) {
           {isAdmin && (
             <>
               <label className="btn">Load formulary CSV<input type="file" accept=".csv,text/csv" onChange={onFile} hidden /></label>
-              <a className="btn" href="/formulary-template.csv" download>Template</a>
+              <button className="btn" onClick={() => download('formulary-template.csv', SAMPLE_FORMULARY)}>Template</button>
               <button className="btn primary" onClick={() => setModal({ kind: 'edit', m: null })}>Add medicine</button>
             </>
           )}

@@ -1,22 +1,19 @@
-// End-to-end: hub + 5 browser "tablets"; one goes offline mid-clinic.
+// End-to-end: local server + 5 browser "phones"; one goes offline mid-clinic.
 //   npm run build && node test/e2e-offline.mjs
 // Uses the Playwright + Chromium installed on the machine (not a project dependency).
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
-import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 const PORT = 8091;
 const BASE = `http://localhost:${PORT}`;
-const DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'clinicos-e2e-'));
 const SHOTS = process.env.SHOTS_DIR;
 
-const hub = spawn(process.execPath, ['hub/server.js'], { env: { ...process.env, PORT, DATA_DIR: DATA }, stdio: 'pipe' });
-await new Promise((resolve) => hub.stdout.on('data', (d) => String(d).includes('Pairing code') && resolve()));
-const code = JSON.parse(fs.readFileSync(path.join(DATA, 'hub.json'), 'utf8')).pairingCode;
+const code = '135790';
+const hub = spawn(process.execPath, ['server/local.js'], { env: { ...process.env, PORT, CLINIC_CODE: code, LOCAL_DB_DIR: 'memory://' }, stdio: 'pipe' });
+await new Promise((resolve) => hub.stdout.on('data', (d) => String(d).includes('Clinic code') && resolve()));
 
 const browser = await chromium.launch();
 const step = (msg) => console.log('✓', msg);
@@ -30,23 +27,23 @@ async function tablet(station, name) {
   await page.getByRole('button', { name: station, exact: true }).click();
   await page.fill('#tname', name);
   await page.fill('#code', code);
-  await page.getByRole('button', { name: 'Pair and start' }).click();
-  await page.locator('header').getByText('Synced to hub').waitFor();
+  await page.getByRole('button', { name: 'Start', exact: true }).click();
+  await page.locator('header').getByText('Synced', { exact: true }).waitFor();
   return { ctx, page };
 }
 
 try {
-  const admin = await tablet('Admin', 'Hub laptop');
+  const admin = await tablet('Admin', 'Admin laptop');
   await admin.page.getByRole('button', { name: 'Stock', exact: true }).click();
   await admin.page.getByRole('button', { name: 'Load sample list for a dry run' }).click();
   await admin.page.getByText('Amlodipine 5 mg').waitFor();
-  step('admin paired and loaded the formulary');
+  step('admin set up and loaded the formulary');
 
   const reg = await tablet('Registration', 'Desk 1');
   const vit = await tablet('Vitals / triage', 'Table 2');
   const doc = await tablet('Doctor', 'Room A');
   const ph = await tablet('Pharmacy', 'Pharmacy');
-  step('4 station tablets paired');
+  step('4 station phones set up with the clinic code');
 
   async function register(page, name, sex, age, complaints) {
     await page.fill('#name', name);
@@ -68,7 +65,7 @@ try {
   await reg.ctx.setOffline(true);
   await register(reg.page, 'Lamin Ceesay', 'M', '6', ['Fever']);
   await reg.page.locator('header').getByText(/Offline · \d+ changes? waiting to sync/).waitFor({ timeout: 15000 });
-  step('Desk 1 offline: Lamin saved locally, badge shows changes waiting');
+  step('Desk 1 offline: Lamin saved on the phone, badge shows changes waiting');
 
   await reg.page.reload(); // still offline: app must open from cache with data intact
   await reg.page.getByText('Enter the station PIN').waitFor();
@@ -77,7 +74,7 @@ try {
   await reg.page.fill('#search', 'Lamin');
   await reg.page.getByText('Use this patient').waitFor();
   await shot(reg.page, '2-offline-registration');
-  step('reloaded while offline: app opened from cache, Lamin still on the tablet');
+  step('reloaded while offline: app opened from cache, Lamin still on the phone');
   if (await vit.page.getByText('Lamin Ceesay').count()) throw new Error('Lamin should not reach Vitals while Desk 1 is offline');
 
   // --- Vitals: urgent BP ---
@@ -95,7 +92,7 @@ try {
 
   // --- Desk 1 reconnects ---
   await reg.ctx.setOffline(false);
-  await reg.page.locator('header').getByText('Synced to hub').waitFor({ timeout: 15000 });
+  await reg.page.locator('header').getByText('Synced', { exact: true }).waitFor({ timeout: 15000 });
   await vit.page.getByText('Lamin Ceesay').first().waitFor({ timeout: 10000 });
   step('Desk 1 reconnected: queued changes synced, Lamin now on Vitals');
 
@@ -127,16 +124,72 @@ try {
   // --- Stock + board on the admin laptop ---
   await admin.page.getByRole('button', { name: 'Stock', exact: true }).click();
   await admin.page.waitForFunction(() => [...document.querySelectorAll('tr')].some((r) => r.textContent.includes('Amlodipine 5 mg') && r.children[2]?.textContent === '270'), null, { timeout: 10000 });
-  step('stock on hand went 300 → 270 on the admin laptop');
+  step('stock on hand went 300 → 270 on the admin screen');
   await admin.page.getByRole('button', { name: 'Clinic lead', exact: true }).click();
   await admin.page.getByText('Lamin C.').waitFor();
   await shot(admin.page, '6-board');
   step('lead board shows live queues');
 
-  // Hub log must contain everything
-  const log = fs.readFileSync(path.join(DATA, 'clinic-log.jsonl'), 'utf8');
-  for (const s of ['Fatou Jallow', 'Lamin Ceesay', '"dispensed"']) if (!log.includes(s)) throw new Error('hub log missing ' + s);
-  step('hub log on disk holds all records');
+  // --- Any station can find a patient; registration sees location, not clinical notes ---
+  await reg.page.getByRole('button', { name: /Find patient/ }).click();
+  await reg.page.getByLabel('Search patients').fill('Fatou');
+  await reg.page.getByRole('button', { name: /Fatou Jallow/ }).click();
+  await reg.page.getByText('Finished · medicines dispensed').waitFor();
+  if (await reg.page.getByText('BP 168/102').count()) throw new Error('registration should not see clinical details');
+  await reg.page.getByRole('button', { name: 'Close', exact: true }).click();
+  step('registration phone found Fatou: journey shown, clinical notes hidden');
+
+  // --- Switch station with that station's PIN ---
+  await reg.page.locator('header .station-pill').click();
+  await reg.page.getByRole('button', { name: 'Doctor', exact: true }).click();
+  for (const d of '1234') await reg.page.getByRole('button', { name: d, exact: true }).click();
+  await reg.page.locator('header').getByText('Doctor · Desk 1').waitFor();
+  await reg.page.locator('header .station-pill').click();
+  await reg.page.getByRole('button', { name: 'Registration', exact: true }).click();
+  for (const d of '1234') await reg.page.getByRole('button', { name: d, exact: true }).click();
+  await reg.page.locator('header').getByText('Registration · Desk 1').waitFor();
+  step('Desk 1 switched to the Doctor station and back with PINs');
+
+  // --- Next clinic day: returning patient, history, past-day report ---
+  const firstDay = await admin.page.evaluate(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; });
+  await admin.page.getByRole('button', { name: 'Admin', exact: true }).click();
+  await admin.page.fill('#s-day', '2027-01-23');
+  await admin.page.getByRole('button', { name: 'Save', exact: true }).click();
+  await admin.page.getByText('The clinic day is set to').waitFor();
+  step('stale clinic-day warning shown when the day is not today');
+  // Wait until the new clinic day has synced to Desk 1 (its warning banner appears).
+  await reg.page.getByText('The clinic day is set to 2027-01-23').waitFor({ timeout: 20000 });
+  await reg.page.fill('#search', 'Fatou');
+  await reg.page.getByRole('button', { name: 'Use this patient' }).click();
+  await reg.page.getByLabel('Patient agreed').check();
+  await reg.page.getByRole('button', { name: 'Register and send to Vitals' }).click();
+  await reg.page.getByText('sent to Vitals').waitFor();
+  await doc.page.getByRole('button', { name: /Find patient/ }).click();
+  await doc.page.getByLabel('Search patients').fill('DFC-0001');
+  await doc.page.getByRole('button', { name: /Fatou Jallow/ }).click();
+  await doc.page.getByText('Past clinic days · 1').waitFor();
+  await doc.page.locator('details summary', { hasText: firstDay }).click();
+  await doc.page.getByText('BP 168/102').waitFor();
+  await doc.page.getByRole('button', { name: 'Close', exact: true }).click();
+  step('returning patient on the next clinic day: doctor sees last visit history');
+  await admin.page.getByRole('button', { name: 'Report', exact: true }).click();
+  await admin.page.selectOption('#day-pick', firstDay);
+  await admin.page.getByRole('heading', { name: `Past clinic day · ${firstDay}` }).waitFor();
+  await admin.page.locator('tr', { hasText: 'Patients registered' }).getByText('2').waitFor();
+  step('report opens a past clinic day (2 patients registered)');
+  await admin.page.getByRole('button', { name: 'Switch to today' }).click();
+  await admin.page.getByText('The clinic day is set to').waitFor({ state: 'detached' });
+  step('one tap switched the clinic day back to today');
+
+  // The server's full backup must contain everything
+  const dev = await admin.page.evaluate(() => new Promise((ok) => {
+    const r = indexedDB.open('clinic-os');
+    r.onsuccess = () => { const g = r.result.transaction('meta').objectStore('meta').get('device'); g.onsuccess = () => ok(g.result); };
+  }));
+  const backup = await fetch(BASE + '/api/backup', { method: 'POST', body: JSON.stringify({ deviceId: dev.deviceId, token: dev.token }) }).then((r) => r.json());
+  const all = JSON.stringify(backup.docs);
+  for (const s of ['Fatou Jallow', 'Lamin Ceesay', '"dispensed"']) if (!all.includes(s)) throw new Error('server backup missing ' + s);
+  step('server database holds all records');
   console.log('\nE2E PASSED');
 } catch (err) {
   console.error('\nE2E FAILED:', err.message);
