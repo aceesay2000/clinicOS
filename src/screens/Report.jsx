@@ -9,22 +9,34 @@ export default function Report() {
   useDB();
   const [printing, setPrinting] = useState(false);
   const s = M.settings();
-  const r = M.dayReport();
-  const body = <ReportBody r={r} s={s} />;
+  const days = M.clinicDays();
+  const [picked, setPicked] = useState(null);
+  const day = picked || s.day;
+  const r = M.dayReport(day);
+  const body = <ReportBody r={r} s={s} day={day} />;
   return (
     <div className="page" style={{ maxWidth: 960 }}>
       <div className="row" style={{ justifyContent: 'space-between' }}>
-        <h1>End-of-day report · {s.day}</h1>
+        <h1>{day === s.day ? 'End-of-day report' : 'Past clinic day'} · {day}</h1>
         <button className="btn primary" onClick={() => setPrinting(true)}>Print report</button>
       </div>
+      {days.length > 1 && (
+        <div className="card" style={{ marginTop: 12 }}>
+          <label className="label" htmlFor="day-pick">Clinic day</label>
+          <select id="day-pick" className="input" value={day} onChange={(e) => setPicked(e.target.value)}>
+            {!days.some((d) => d.day === s.day) && <option value={s.day}>{s.day} · today · 0 patients</option>}
+            {days.map((d) => <option key={d.day} value={d.day}>{d.day}{d.day === s.day ? ' · today' : ''} · {d.count} patient{d.count === 1 ? '' : 's'}</option>)}
+          </select>
+        </div>
+      )}
       <div className="card" style={{ marginTop: 12 }}>{body}</div>
       <div className="card">
-        <h3>Export (CSV opens in Excel / Google Sheets)</h3>
+        <h3>Export {day} (CSV opens in Excel / Google Sheets)</h3>
         <div className="row" style={{ marginTop: 10 }}>
-          <button className="btn" onClick={X.exportVisits}>Patients & visits</button>
-          <button className="btn" onClick={X.exportDispensing}>Dispensing log</button>
-          <button className="btn" onClick={X.exportStock}>Stock left</button>
-          <button className="btn" onClick={X.exportMovements}>Stock movements</button>
+          <button className="btn" onClick={() => X.exportVisits(day)}>Patients & visits</button>
+          <button className="btn" onClick={() => X.exportDispensing(day)}>Dispensing log</button>
+          <button className="btn" onClick={X.exportStock}>Stock now</button>
+          <button className="btn" onClick={X.exportMovements}>All stock movements</button>
         </div>
         <p className="small muted">Exports contain patient details. Keep files on clinic devices and delete them from shared phones after copying to the admin laptop.</p>
       </div>
@@ -33,10 +45,10 @@ export default function Report() {
   );
 }
 
-function ReportBody({ r, s }) {
+function ReportBody({ r, s, day }) {
   return (
     <>
-      <h2>{s.clinicName} · {s.eventName} · {s.place} · {s.day}</h2>
+      <h2>{s.clinicName} · {s.eventName} · {s.place} · {day}</h2>
       <table className="t" style={{ marginTop: 10 }}>
         <tbody>
           <tr><td>Patients registered</td><td><b>{r.registered}</b></td></tr>
@@ -63,7 +75,7 @@ function ReportBody({ r, s }) {
           </tbody></table>
         </div>
       </div>
-      <h3 style={{ marginTop: 14 }}>Stock left</h3>
+      <h3 style={{ marginTop: 14 }}>{day === s.day ? 'Stock left' : 'Stock now (current count, not as of that day)'}</h3>
       <table className="t"><tbody>
         {M.medicines().map((m) => {
           const st = M.stockOf(m.id);

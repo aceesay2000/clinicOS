@@ -3,10 +3,10 @@ import * as M from './model.js';
 import { ageOf, doseText, medName } from './clinical.js';
 import { download, toCSV } from './csv.js';
 
-const fname = (what) => `clinicos-${M.settings().day}-${what}`;
+const fname = (day, what) => `clinicos-${day}-${what}`;
 
-export function exportVisits() {
-  const rows = M.visitsToday().map((v) => {
+export function exportVisits(day = M.settings().day) {
+  const rows = M.visitsOn(day).map((v) => {
     const p = M.patientOf(v) || {};
     const vit = M.vitalsFor(v.id) || {};
     const c = M.consultFor(v.id) || {};
@@ -23,12 +23,11 @@ export function exportVisits() {
       medicines_dispensed: meds, status: v.status, station_now: v.station,
     };
   });
-  download(fname('patients.csv'), toCSV(rows));
+  download(fname(day, 'patients.csv'), toCSV(rows));
 }
 
-export function exportDispensing() {
-  const day = M.settings().day;
-  const visitIds = new Set(M.visitsToday().map((v) => v.id));
+export function exportDispensing(day = M.settings().day) {
+  const visitIds = new Set(M.visitsOn(day).map((v) => v.id));
   const rows = db.all('rxitem').filter((i) => visitIds.has(i.visitId)).map((i) => {
     const v = db.get(i.visitId);
     const m = db.get(i.medicineId);
@@ -39,7 +38,7 @@ export function exportDispensing() {
       override_reason: i.overrideReason || '',
     };
   });
-  download(fname('dispensing.csv'), toCSV(rows));
+  download(fname(day, 'dispensing.csv'), toCSV(rows));
 }
 
 export function exportStock() {
@@ -50,7 +49,7 @@ export function exportStock() {
       on_hand: st.onHand, reserved: st.reserved, available: st.available, low_threshold: m.lowThreshold,
     };
   });
-  download(fname('stock.csv'), toCSV(rows));
+  download(fname(M.settings().day, 'stock.csv'), toCSV(rows));
 }
 
 export function exportMovements() {
@@ -58,11 +57,11 @@ export function exportMovements() {
     time: new Date(mv.createdAt).toISOString(), medicine: medName(db.get(mv.medicineId)), kind: mv.kind,
     qty: mv.qty, delta: mv.delta, reason: mv.reason || '', card: db.get(mv.visitId)?.clinicId || '', device: mv.updatedBy,
   }));
-  download(fname('stock-movements.csv'), toCSV(rows));
+  download(fname(M.settings().day, 'stock-movements.csv'), toCSV(rows));
 }
 
 /** Everything on this phone, as JSON (restorable / importable later). */
 export function exportBackupLocal() {
   const data = { app: 'clinic-os', exportedAt: Date.now(), source: 'phone', docs: db.all() };
-  download(fname('backup.json'), JSON.stringify(data), 'application/json');
+  download(fname(M.settings().day, 'backup.json'), JSON.stringify(data), 'application/json');
 }

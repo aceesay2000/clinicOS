@@ -130,6 +130,57 @@ try {
   await shot(admin.page, '6-board');
   step('lead board shows live queues');
 
+  // --- Any station can find a patient; registration sees location, not clinical notes ---
+  await reg.page.getByRole('button', { name: /Find patient/ }).click();
+  await reg.page.getByLabel('Search patients').fill('Fatou');
+  await reg.page.getByRole('button', { name: /Fatou Jallow/ }).click();
+  await reg.page.getByText('Finished · medicines dispensed').waitFor();
+  if (await reg.page.getByText('BP 168/102').count()) throw new Error('registration should not see clinical details');
+  await reg.page.getByRole('button', { name: 'Close', exact: true }).click();
+  step('registration phone found Fatou: journey shown, clinical notes hidden');
+
+  // --- Switch station with that station's PIN ---
+  await reg.page.locator('header .station-pill').click();
+  await reg.page.getByRole('button', { name: 'Doctor', exact: true }).click();
+  for (const d of '1234') await reg.page.getByRole('button', { name: d, exact: true }).click();
+  await reg.page.locator('header').getByText('Doctor · Desk 1').waitFor();
+  await reg.page.locator('header .station-pill').click();
+  await reg.page.getByRole('button', { name: 'Registration', exact: true }).click();
+  for (const d of '1234') await reg.page.getByRole('button', { name: d, exact: true }).click();
+  await reg.page.locator('header').getByText('Registration · Desk 1').waitFor();
+  step('Desk 1 switched to the Doctor station and back with PINs');
+
+  // --- Next clinic day: returning patient, history, past-day report ---
+  const firstDay = await admin.page.evaluate(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; });
+  await admin.page.getByRole('button', { name: 'Admin', exact: true }).click();
+  await admin.page.fill('#s-day', '2027-01-23');
+  await admin.page.getByRole('button', { name: 'Save', exact: true }).click();
+  await admin.page.getByText('The clinic day is set to').waitFor();
+  step('stale clinic-day warning shown when the day is not today');
+  // Wait until the new clinic day has synced to Desk 1 (its warning banner appears).
+  await reg.page.getByText('The clinic day is set to 2027-01-23').waitFor({ timeout: 20000 });
+  await reg.page.fill('#search', 'Fatou');
+  await reg.page.getByRole('button', { name: 'Use this patient' }).click();
+  await reg.page.getByLabel('Patient agreed').check();
+  await reg.page.getByRole('button', { name: 'Register and send to Vitals' }).click();
+  await reg.page.getByText('sent to Vitals').waitFor();
+  await doc.page.getByRole('button', { name: /Find patient/ }).click();
+  await doc.page.getByLabel('Search patients').fill('DFC-0001');
+  await doc.page.getByRole('button', { name: /Fatou Jallow/ }).click();
+  await doc.page.getByText('Past clinic days · 1').waitFor();
+  await doc.page.locator('details summary', { hasText: firstDay }).click();
+  await doc.page.getByText('BP 168/102').waitFor();
+  await doc.page.getByRole('button', { name: 'Close', exact: true }).click();
+  step('returning patient on the next clinic day: doctor sees last visit history');
+  await admin.page.getByRole('button', { name: 'Report', exact: true }).click();
+  await admin.page.selectOption('#day-pick', firstDay);
+  await admin.page.getByRole('heading', { name: `Past clinic day · ${firstDay}` }).waitFor();
+  await admin.page.locator('tr', { hasText: 'Patients registered' }).getByText('2').waitFor();
+  step('report opens a past clinic day (2 patients registered)');
+  await admin.page.getByRole('button', { name: 'Switch to today' }).click();
+  await admin.page.getByText('The clinic day is set to').waitFor({ state: 'detached' });
+  step('one tap switched the clinic day back to today');
+
   // The server's full backup must contain everything
   const dev = await admin.page.evaluate(() => new Promise((ok) => {
     const r = indexedDB.open('clinic-os');

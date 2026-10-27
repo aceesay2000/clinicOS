@@ -62,10 +62,26 @@ export const idNumber = (clinicId) => Number(String(clinicId || '').replace(/\D/
 export const patients = memo(() => db.all('patient').filter((p) => !p.removed));
 export const medicines = memo(() => db.all('medicine').filter((m) => !m.archived).sort((a, b) => a.name.localeCompare(b.name)));
 
-export const visitsToday = memo(() => {
-  const day = settings().day;
-  return db.all('visit').filter((v) => v.day === day && !v.removed);
+const visitsByDay = memo(() => {
+  const m = new Map();
+  for (const v of db.all('visit')) {
+    if (v.removed) continue;
+    if (!m.has(v.day)) m.set(v.day, []);
+    m.get(v.day).push(v);
+  }
+  return m;
 });
+
+export const visitsOn = (day) => visitsByDay().get(day) || [];
+export const visitsToday = () => visitsOn(settings().day);
+
+/** Every clinic day with records, newest first: [{ day, count }]. */
+export function clinicDays() {
+  return [...visitsByDay().entries()].map(([day, v]) => ({ day, count: v.length })).sort((a, b) => b.day.localeCompare(a.day));
+}
+
+/** True when the clinic day in settings is not today's date (e.g. left over from last year). */
+export const dayIsStale = () => settings().day !== localDay(new Date(db.now()));
 
 const byVisit = (type) => memo(() => {
   const m = new Map();
@@ -274,8 +290,8 @@ export async function saveMedicine(id, fields, startingCount) {
 
 // ---------- reports ----------
 
-export function dayReport() {
-  const visits = visitsToday();
+export function dayReport(day = settings().day) {
+  const visits = visitsOn(day);
   const seen = visits.filter((v) => consultFor(v.id)?.finishedAt);
   const dispensed = visits.filter((v) => v.status === 'dispensed');
   const urgentWaiting = visits.filter((v) => v.urgent && v.station !== 'done');
