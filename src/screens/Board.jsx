@@ -84,7 +84,7 @@ function Column({ title, station, onOpen }) {
 
 function Devices() {
   useNow(10000);
-  const devices = db.all('device').sort((a, b) => (a.station || '').localeCompare(b.station || ''));
+  const devices = db.all('device').filter((d) => !d.revoked).sort((a, b) => (a.station || '').localeCompare(b.station || ''));
   if (!devices.length) return null;
   return (
     <div className="card" style={{ marginTop: 12 }}>
@@ -95,7 +95,7 @@ function Devices() {
           const ok = db.now() - d.lastSeen < 45000;
           return (
             <span key={d.id} className="sync small">
-              <i className={'dot ' + (ok ? 'ok' : 'warn')} /> {d.name}
+              <i className={'dot ' + (ok ? 'ok' : 'warn')} /> {d.name}{d.memberName ? ` · ${d.memberName}` : ''}
               {!ok && ` · not seen for ${ago} min`}
             </span>
           );

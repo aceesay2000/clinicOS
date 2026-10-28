@@ -8,23 +8,37 @@ It's a normal website that volunteers open on their own phones. **If the interne
 every change is saved on the phone first, the top bar shows *"Offline · 3 changes waiting to sync"*, and
 everything is sent automatically when the connection is back.
 
+## People and devices
+
+- **Devices** (clinic tablets or volunteers’ own phones) are set up once with the **clinic code**.
+- **People** sign in on any set-up device with **their own name and 4-digit PIN**, then pick a station their
+  role allows (volunteer: registration · nurse: vitals, registration · doctor: doctor, vitals · pharmacy ·
+  clinic lead: all stations, board, report, team · admin: everything).
+- The first person to open a brand-new clinic creates the **admin** account. The admin adds the team in
+  **Team → Add team member**, or a newcomer taps **New here? Ask to join** and a lead or admin approves them.
+- Every record is stamped with who did it and on which device.
+
 ## On clinic day
 
-1. Every volunteer opens the clinic's web address in Chrome (and taps *Add to Home screen*).
-2. They choose their station, type the **clinic code** (from the admin) and tap Start. Default PIN: `1234`.
-3. The screen locks after 2 minutes idle; the station PIN unlocks it. The admin PIN unlocks any station.
-4. **Find patient** (top bar, every station) searches by name, card, phone or household and shows where the
+1. Volunteers open the clinic’s web address in Chrome (and tap *Add to Home screen*). First time on a
+   device: set it up with the clinic code.
+2. **Who’s working?** Tap your name, enter your PIN, pick your station.
+3. The screen locks after 2 minutes idle; your PIN unlocks it (“Not you?” lets someone else sign in).
+4. Tap **your name** in the top bar to switch station, lock, or **sign out**. Sign out before handing a
+   device to someone else. On your own phone, **Sign out and erase** removes all patient data from it.
+5. **Find patient** (top bar, every station) searches by name, card, phone or household and shows where the
    patient is now plus every past clinic day. Registration sees the journey; clinical stations also see
    vitals, diagnoses and medicines.
-5. **Switch station** by tapping the station name in the top bar and entering that station’s PIN, e.g. a
-   registration volunteer covering the doctor’s queue.
-6. At the end of the day the admin opens **Report** (CSV exports) and **Admin → Download full backup**,
-   then each volunteer phone is cleared with **Admin → Wipe this phone**.
+6. The admin and lead watch **Team**: who is on duty at which station and device, patients handled per
+   person, approvals waiting, and every device’s last check-in. A lost phone: **Team → Devices → Remove**
+   (admin PIN required, checked by the server). It stops syncing and erases its data when it next connects.
+7. At the end of the day the admin opens **Report** (CSV exports) and **Admin → Download full backup**,
+   and volunteers sign out and erase their own phones.
 
 ## Before clinic day (admin)
 
 - **Stock → Load formulary CSV** with the real medicine list and counts (tap **Template** for the columns).
-- **Admin → Station PINs**: replace the default `1234` for every station.
+- **Team**: add everyone with a role and PIN (or approve their requests). Only admins can add admins.
 - **Admin → Clinic day**: date, village list, clinic phone number for slips. Every station warns if the
   clinic day isn't today's date, so last year's date can't be used by mistake.
 - **Report** opens any past clinic day; returning patients are found by search and their history follows them.
@@ -50,7 +64,7 @@ Needs Node.js (LTS, from nodejs.org). No database needed: a local one is created
 
 ```bash
 npm install
-npm start          # builds and runs on http://localhost:8080 — clinic code 123456
+npm start          # builds and runs on http://localhost:8080 — clinic code 123456; create the admin on first open
 ```
 
 ## How the offline failsafe works

@@ -9,7 +9,7 @@ import * as db from './local.js';
 
 const TIMEOUT_MS = 8000;
 
-let config = null; // { hubUrl ('' = this site), hubId (server id), token, deviceId, name, station }
+let config = null; // { hubUrl ('' = this site), hubId (server id), token, deviceId, name, kind }
 let timer = null;
 let unsubscribe = null;
 let running = false;
@@ -64,16 +64,29 @@ async function call(path, body, url) {
 }
 
 /** Register this phone with the clinic server. Returns { hubUrl, hubId, token }. */
-export async function pair(hubBase, code, deviceId, name) {
+export async function pair(hubBase, code, deviceId, name, kind) {
   const base = hubBase.replace(/\/$/, '');
   const hello = await call(null, null, base + '/api/hello');
   if (hello.app !== 'clinic-os') throw new Error('That address is not a ClinicOS server');
-  const res = await call(null, { code, deviceId, name }, base + '/api/pair');
+  const res = await call(null, { code, deviceId, name, kind }, base + '/api/pair');
   return { hubUrl: base, hubId: res.hubId, token: res.token };
 }
 
 export async function requestIdBlock() {
   return call('/api/idblock', { deviceId: config.deviceId, token: config.token });
+}
+
+/** Admin removes another device; proven by the admin's own PIN on the server. */
+export async function revokeDevice(target, adminId, pin) {
+  return call('/api/revoke', { deviceId: config.deviceId, token: config.token, target, adminId, pin });
+}
+
+// Who is signed in here and at which station, reported to the lead board and admin.
+let presence = {};
+export function setPresence(p) {
+  presence = p;
+  lastHeartbeat = 0;
+  syncNow();
 }
 
 export async function fetchBackup() {
@@ -108,7 +121,7 @@ export async function syncNow() {
         hubId: config.hubId,
         since,
         changes,
-        device: beat ? { name: config.name, station: config.station } : undefined,
+        device: beat ? { name: config.name, kind: config.kind || 'shared', station: null, memberId: null, memberName: null, ...presence } : undefined,
       });
       if (res.hubId !== config.hubId) throw new Error('Connected to a different clinic server — changes kept on this phone');
       if (beat) lastHeartbeat = Date.now();
@@ -123,6 +136,10 @@ export async function syncNow() {
     setStatus({ state: pending ? 'syncing' : 'synced', pending, lastSync: Date.now(), message: '' });
   } catch (err) {
     const pending = await db.pendingCount().catch(() => status.pending);
+    if (err.status === 410) {
+      setStatus({ state: 'revoked', pending, message: err.message });
+      return;
+    }
     const offline = err.name === 'AbortError' || err instanceof TypeError;
     setStatus({
       state: offline ? 'offline' : 'error',
@@ -131,7 +148,7 @@ export async function syncNow() {
     });
   } finally {
     running = false;
-    schedule();
+    if (status.state !== 'revoked') schedule();
   }
 }
 

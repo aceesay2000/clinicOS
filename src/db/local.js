@@ -138,6 +138,9 @@ function notify() {
 
 let deviceId = null;
 export const setDeviceId = (id) => (deviceId = id);
+// The signed-in team member; stamped on every change for the audit trail.
+let userId = null;
+export const setUserId = (id) => (userId = id);
 
 // Server time minus this phone's clock, learned on each sync. Volunteers'
 // phones are not always set to the right time; wait times and "newest edit
@@ -154,7 +157,7 @@ export async function put(type, id, fields) {
   id ||= uuid();
   const ts = now();
   const prev = docs.get(id);
-  const change = { ...fields, updatedAt: ts, updatedBy: deviceId };
+  const change = { ...fields, updatedAt: ts, updatedBy: deviceId, byUser: userId };
   if (!prev) change.createdAt = fields.createdAt || ts;
   const doc = { ...(prev || { id, type }), ...change };
   docs.set(id, doc);
