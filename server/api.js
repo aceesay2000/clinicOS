@@ -3,6 +3,7 @@
 
 import crypto from 'node:crypto';
 import { merge, stamp } from './merge.js';
+import { hashPin } from '../src/lib/pin.js';
 
 const ID_BLOCK_SIZE = Number(process.env.ID_BLOCK_SIZE || 100);
 const PAGE = 2000;
@@ -20,6 +21,12 @@ create table if not exists devices (
 create table if not exists config (key text primary key, value jsonb not null);
 `;
 
+// Additive changes for databases created by earlier versions; safe to repeat.
+const MIGRATIONS = [
+  'alter table devices add column if not exists revoked boolean not null default false',
+  'alter table devices add column if not exists kind text',
+];
+
 // Per server instance: schema checked once, server id read once.
 const ready = new WeakMap();
 const serverIds = new WeakMap();
@@ -31,6 +38,7 @@ function ensureSchema(db) {
         for (const stmt of SCHEMA.split(';').map((s) => s.trim()).filter(Boolean)) await db.query(stmt);
         await db.query(`insert into config (key, value) values ('serverId', $1), ('nextId', '1') on conflict do nothing`, [JSON.stringify(crypto.randomUUID())]);
       }
+      for (const m of MIGRATIONS) await db.query(m);
     })().catch((err) => { ready.delete(db); throw err; }));
   }
   return ready.get(db);
@@ -44,12 +52,21 @@ async function serverId(db) {
   return serverIds.get(db);
 }
 
+/** false = unknown device, 'revoked' = removed by an admin, true = OK. */
 async function authed(q, body) {
   if (!body.deviceId || !body.token) return false;
-  const { rows } = await q.query('select token from devices where device_id = $1', [body.deviceId]);
+  const { rows } = await q.query('select token, revoked from devices where device_id = $1', [body.deviceId]);
   if (!rows[0]) return false;
   const a = Buffer.from(rows[0].token), b = Buffer.from(String(body.token));
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
+  return rows[0].revoked ? 'revoked' : true;
+}
+
+const REVOKED = [410, { error: 'This device was removed by the clinic admin.', revoked: true }];
+const NOT_SET_UP = [401, { error: 'This device is not set up for the clinic. Set it up again with the clinic code.' }];
+async function gate(q, body) {
+  const a = await authed(q, body);
+  return a === true ? null : a === 'revoked' ? REVOKED : NOT_SET_UP;
 }
 
 const rowToDoc = (r) => ({ ...r.data, _seq: Number(r.seq) });
@@ -96,15 +113,24 @@ export const handlers = {
     if (!body.deviceId) return [400, { error: 'deviceId required' }];
     const token = crypto.randomBytes(24).toString('hex');
     await db.query(
-      `insert into devices (device_id, name, token) values ($1, $2, $3)
-       on conflict (device_id) do update set name = excluded.name, token = excluded.token, paired_at = now()`,
-      [body.deviceId, body.name || 'Phone', token],
+      `insert into devices (device_id, name, token, kind) values ($1, $2, $3, $4)
+       on conflict (device_id) do update set name = excluded.name, token = excluded.token, kind = excluded.kind, revoked = false, paired_at = now()`,
+      [body.deviceId, body.name || 'Phone', token, body.kind === 'personal' ? 'personal' : 'shared'],
     );
+    // A device set up again after being removed shows as active again.
+    const { rows: prev } = await db.query('select data from docs where id = $1', ['device:' + body.deviceId]);
+    if (prev[0]?.data?.revoked) {
+      await db.tx(async (q) => {
+        await q.query('select pg_advisory_xact_lock(4242)');
+        await applyChange(q, { id: 'device:' + body.deviceId, type: 'device', base: Infinity, fields: { revoked: false }, ts: Date.now() }, 'server');
+      });
+    }
     return [200, { hubId: await serverId(db), token }];
   },
 
   async 'POST sync'(db, body) {
-    if (!(await authed(db, body))) return [401, { error: 'This phone is not set up for the clinic. Set it up again with the clinic code.' }];
+    const denied = await gate(db, body);
+    if (denied) return denied;
     const sid = await serverId(db);
     if (body.hubId && body.hubId !== sid) return [409, { error: 'Different clinic server' }];
     const changes = body.changes || [];
@@ -127,7 +153,8 @@ export const handlers = {
   },
 
   async 'POST idblock'(db, body) {
-    if (!(await authed(db, body))) return [401, { error: 'This phone is not set up for the clinic.' }];
+    const denied = await gate(db, body);
+    if (denied) return denied;
     return db.tx(async (q) => {
       const { rows } = await q.query(`select value from config where key = 'nextId' for update`);
       const start = Number(rows[0].value);
@@ -136,8 +163,32 @@ export const handlers = {
     });
   },
 
+  /**
+   * Remove a device (lost or stolen phone, volunteer leaving). Only an active
+   * admin can do it, proven by their own PIN checked here on the server; the
+   * device stops syncing and erases its patient data next time it connects.
+   */
+  async 'POST revoke'(db, body) {
+    const denied = await gate(db, body);
+    if (denied) return denied;
+    const { rows } = await db.query('select data from docs where id = $1', [String(body.adminId || '')]);
+    const admin = rows[0]?.data;
+    if (!admin || admin.type !== 'member' || admin.role !== 'admin' || admin.status !== 'active' || admin.pinHash !== hashPin(body.pin, body.adminId)) {
+      return [403, { error: 'Only an admin can remove a device. Check your PIN.' }];
+    }
+    if (!body.target || body.target === body.deviceId) return [400, { error: 'Choose another device to remove.' }];
+    const res = await db.query('update devices set revoked = true where device_id = $1', [body.target]);
+    if (!res.rowCount && !res.affectedRows) return [404, { error: 'Device not found' }];
+    await db.tx(async (q) => {
+      await q.query('select pg_advisory_xact_lock(4242)');
+      await applyChange(q, { id: 'device:' + body.target, type: 'device', base: Infinity, fields: { revoked: true, revokedAt: Date.now(), revokedBy: body.adminId }, ts: Date.now() }, 'server');
+    });
+    return [200, { ok: true }];
+  },
+
   async 'POST backup'(db, body) {
-    if (!(await authed(db, body))) return [401, { error: 'This phone is not set up for the clinic.' }];
+    const denied = await gate(db, body);
+    if (denied) return denied;
     const { rows } = await db.query('select data, seq from docs order by seq');
     return [200, { hubId: await serverId(db), exportedAt: Date.now(), docs: rows.map(rowToDoc) }];
   },
@@ -147,7 +198,7 @@ export const handlers = {
 async function heartbeat(q, deviceId, info) {
   const id = 'device:' + deviceId;
   const existing = await loadDoc(q, id);
-  const same = existing && existing.name === info.name && existing.station === info.station;
+  const same = existing && Object.entries(info).every(([k, v]) => existing[k] === v);
   if (same && Date.now() - existing.lastSeen < 20000) return;
   await applyChange(q, { id, type: 'device', base: Infinity, fields: { ...info, deviceId, lastSeen: Date.now() }, ts: Date.now() }, 'server');
 }

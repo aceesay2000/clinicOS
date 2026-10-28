@@ -8,7 +8,7 @@
 // Nothing is silently lost.
 
 // Workflow fields that many stations legitimately move; last write wins, no review.
-const NO_REVIEW_FIELDS = new Set(['station', 'status', 'stationSince', 'packed', 'updatedAt', 'updatedBy']);
+const NO_REVIEW_FIELDS = new Set(['station', 'status', 'stationSince', 'packed', 'updatedAt', 'updatedBy', 'byUser']);
 // Append-only / ephemeral record types never conflict.
 const NO_REVIEW_TYPES = new Set(['event', 'movement', 'device', 'conflict']);
 

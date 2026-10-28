@@ -3,25 +3,28 @@ import * as db from '../db/local.js';
 import * as sync from '../db/sync.js';
 import { useDB, useSyncStatus } from '../hooks.js';
 import * as M from '../lib/model.js';
-import { ROLES } from '../lib/clinical.js';
-import { hashPin } from '../lib/pin.js';
+import * as T from '../lib/team.js';
 import { idBlocks } from '../lib/ids.js';
 import { exportBackupLocal } from '../lib/exports.js';
 import { download } from '../lib/csv.js';
 import { PrintPortal, QR, useToast } from '../components/ui.jsx';
 import Setup from './Setup.jsx';
 
-export default function Admin({ device, saveDevice }) {
+export default function Admin({ device, saveDevice, setView }) {
   useDB();
   const [editDevice, setEditDevice] = useState(false);
-  if (editDevice) return <Setup existing={device} onDone={async (d) => { await saveDevice(d); setEditDevice(false); }} />;
+  if (editDevice) return <Setup existing={device} onCancel={() => setEditDevice(false)} onDone={async (d) => { await saveDevice(d); setEditDevice(false); }} />;
   return (
     <div className="page" style={{ maxWidth: 980 }}>
       <h1 style={{ marginBottom: 12 }}>Admin</h1>
-      {M.usingDefaultPins() && <div className="banner amber" style={{ marginBottom: 12 }}>Some stations still use the default PIN 1234. Set new PINs below before clinic day.</div>}
+      {T.pendingMembers().length > 0 && (
+        <div className="banner amber" style={{ marginBottom: 12 }}>
+          <span style={{ flex: 1 }}>{T.pendingMembers().length} volunteer{T.pendingMembers().length === 1 ? ' is' : 's are'} waiting for approval.</span>
+          <button className="btn sm" onClick={() => setView('team')}>Open Team</button>
+        </div>
+      )}
       <Conflicts />
       <ClinicSettings />
-      <Pins />
       <ThisPhone device={device} onEdit={() => setEditDevice(true)} />
       <Cards />
       <Data />
@@ -62,48 +65,17 @@ function ClinicSettings() {
   );
 }
 
-function Pins() {
-  const toast = useToast();
-  const [pins, setPins] = useState({});
-  const save = async () => {
-    const bad = Object.values(pins).some((p) => p && !/^\d{4}$/.test(p));
-    if (bad) return toast('PINs must be exactly 4 digits');
-    const current = M.settings().pins || {};
-    const next = { ...current };
-    for (const [role, pin] of Object.entries(pins)) if (pin) next[role] = hashPin(pin);
-    await M.saveSettings({ pins: next });
-    setPins({});
-    toast('PINs saved — they reach other phones on the next sync');
-  };
-  return (
-    <div className="card">
-      <h2>Station PINs</h2>
-      <p className="small muted">4 digits each. Leave blank to keep the current PIN. The admin PIN unlocks every station.</p>
-      <div className="grid3">
-        {ROLES.map((r) => (
-          <div className="field" key={r.id}>
-            <label className="label" htmlFor={'pin-' + r.id}>{r.label} {!(M.settings().pins || {})[r.id] && <span className="badge warn">default</span>}</label>
-            <input id={'pin-' + r.id} className="input mono" inputMode="numeric" maxLength={4} value={pins[r.id] || ''}
-              onChange={(e) => setPins({ ...pins, [r.id]: e.target.value.replace(/\D/g, '') })} placeholder="••••" />
-          </div>
-        ))}
-      </div>
-      <button className="btn primary" onClick={save}>Save PINs</button>
-    </div>
-  );
-}
-
 function ThisPhone({ device, onEdit }) {
   const status = useSyncStatus();
   const [blocks, setBlocks] = useState([]);
   useEffect(() => { idBlocks().then(setBlocks); }, []);
   return (
     <div className="card">
-      <h2>This phone</h2>
+      <h2>This device</h2>
       <div className="grid2" style={{ marginTop: 10 }}>
         <div>
           <div className="kv"><span>Name</span><b>{device.name}</b></div>
-          <div className="kv"><span>Station</span><b>{ROLES.find((r) => r.id === device.station)?.label}</b></div>
+          <div className="kv"><span>Type</span><b>{device.kind === 'personal' ? 'Personal phone' : 'Clinic tablet'}</b></div>
           <div className="kv"><span>Set up for clinic</span><b>{device.token ? 'Yes' : 'No'}</b></div>
         </div>
         <div>
@@ -116,7 +88,7 @@ function ThisPhone({ device, onEdit }) {
       {status.message && <p className="err">{status.message}</p>}
       <div className="row" style={{ marginTop: 10 }}>
         <button className="btn" onClick={() => sync.syncNow()}>Sync now</button>
-        <button className="btn" onClick={onEdit}>Change station</button>
+        <button className="btn" onClick={onEdit}>Rename device</button>
       </div>
     </div>
   );
@@ -217,12 +189,12 @@ function Data() {
       <h2>Backup & after the event</h2>
       <div className="row" style={{ marginTop: 10 }}>
         <button className="btn" onClick={serverBackup}>Download full backup</button>
-        <button className="btn" onClick={exportBackupLocal}>Download this phone's data</button>
+        <button className="btn" onClick={exportBackupLocal}>Download this device's data</button>
       </div>
       <p className="small muted">The online database keeps its own backups too. Download a full copy at the end of each clinic day.</p>
       <div className="banner red" style={{ marginTop: 14, color: 'var(--ink)' }}>
         <div style={{ flex: 1 }}>
-          <b>Wipe this phone</b> — removes all patient data from this phone. Do this on volunteers' phones after the clinic day.
+          <b>Wipe this device</b> — removes all patient data from it. Volunteers can also do this themselves: name menu → Sign out and erase. Lost a phone? Remove it in Team.
           {status.pending > 0 && <div className="err">{status.pending} changes have not reached the server yet. Connect to the internet first.</div>}
         </div>
         <input className="input" style={{ width: 160, fontSize: 16 }} placeholder="Type WIPE" value={confirm} onChange={(e) => setConfirm(e.target.value)} />

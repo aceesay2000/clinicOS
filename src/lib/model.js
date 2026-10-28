@@ -3,11 +3,8 @@
 
 import * as db from '../db/local.js';
 import { calcQty, ageOf, DEFAULT_VILLAGES } from './clinical.js';
-import { hashPin } from './pin.js';
 
 // ---------- settings ----------
-
-export const DEFAULT_PIN = '1234';
 
 export function localDay(d = new Date()) {
   const z = (n) => String(n).padStart(2, '0');
@@ -23,25 +20,12 @@ export function settings() {
     phone: '',
     idPrefix: 'DFC',
     villages: DEFAULT_VILLAGES,
-    pins: {},
     ...s,
     day: s.day || localDay(),
   };
 }
 
 export const saveSettings = (fields) => db.put('settings', 'settings', fields);
-
-export function checkPin(role, pin) {
-  const pins = settings().pins || {};
-  const stored = pins[role];
-  if (!stored) return pin === DEFAULT_PIN;
-  return stored === hashPin(pin);
-}
-
-export function usingDefaultPins() {
-  const pins = settings().pins || {};
-  return ['registration', 'vitals', 'doctor', 'pharmacy', 'lead', 'admin'].some((r) => !pins[r]);
-}
 
 // ---------- memoised selectors (recomputed only when data changes) ----------
 

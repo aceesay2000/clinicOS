@@ -114,3 +114,28 @@ test('merge: workflow fields never raise conflicts', () => {
   assert.equal(r.doc.station, 'pharmacy');
   assert.equal(r.conflicts.length, 0);
 });
+
+test('only an active admin with the right PIN can remove a device; removed devices are cut off', async () => {
+  const { hashPin } = await import('../src/lib/pin.js');
+  const { phone, call } = await setup();
+  const a = await phone('A'), b = await phone('B');
+  const adminId = 'member:admin-1', volId = 'member:vol-1';
+  await a.sync([
+    { id: adminId, type: 'member', base: 0, fields: { name: 'Admin', role: 'admin', status: 'active', pinHash: hashPin('2468', adminId) }, ts: 1 },
+    { id: volId, type: 'member', base: 0, fields: { name: 'Vol', role: 'volunteer', status: 'active', pinHash: hashPin('1357', volId) }, ts: 1 },
+  ]);
+  const revoke = (adminIdArg, pin) => call('revoke', { deviceId: 'A', token: a.token, target: 'B', adminId: adminIdArg, pin });
+  assert.equal((await revoke(adminId, '0000')).status, 403, 'wrong PIN refused');
+  assert.equal((await revoke(volId, '1357')).status, 403, 'a volunteer cannot remove devices');
+  assert.equal((await revoke(adminId, '2468')).status, 200);
+  const r = await b.sync();
+  assert.equal(r.status, 410);
+  assert.equal(r.revoked, true);
+  assert.equal((await call('idblock', { deviceId: 'B', token: b.token })).status, 410);
+  const dev = (await a.sync()).docs.find((d) => d.id === 'device:B');
+  assert.equal(dev.revoked, true, 'admins see the device as removed');
+  // Setting the device up again with the clinic code lets it back in.
+  const again = await call('pair', { code: '246810', deviceId: 'B', name: 'B' });
+  assert.equal((await call('sync', { deviceId: 'B', token: again.token })).status, 200);
+  assert.equal((await a.sync()).docs.find((d) => d.id === 'device:B').revoked, false, 'shows as active again');
+});
